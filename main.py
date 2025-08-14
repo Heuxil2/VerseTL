@@ -12,9 +12,46 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import googleapiclient.errors
 
+# ============ CONFIG & AUTHORIZATION ============
+
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0")) if os.getenv("GUILD_ID") else None
+
+# Bot owner (Heuxil) and server authorization persistence
+OWNER_ID = 836452038548127764  # Heuxil
+AUTHORIZED_FILE = "authorized_guilds.json"
+authorized_guilds = set()
+
+def load_authorized_guilds():
+    global authorized_guilds
+    try:
+        if os.path.exists(AUTHORIZED_FILE):
+            with open(AUTHORIZED_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                authorized_guilds = set(data.get("guild_ids", []))
+                print(f"DEBUG: Loaded {len(authorized_guilds)} authorized guild(s)")
+        else:
+            authorized_guilds = set()
+            print("DEBUG: No authorized_guilds file found, starting empty")
+    except Exception as e:
+        print(f"DEBUG: Error loading authorized guilds: {e}")
+        authorized_guilds = set()
+
+def save_authorized_guilds():
+    try:
+        with open(AUTHORIZED_FILE, "w", encoding="utf-8") as f:
+            json.dump({"guild_ids": list(authorized_guilds)}, f, indent=2)
+        print(f"DEBUG: Saved {len(authorized_guilds)} authorized guild(s)")
+    except Exception as e:
+        print(f"DEBUG: Error saving authorized guilds: {e}")
+
+def is_guild_authorized(guild_id):
+    if guild_id is None:
+        return False
+    return guild_id in authorized_guilds
+
+# ============ DISCORD SETUP ============
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -290,15 +327,45 @@ async def update_user_count_channel(guild):
         category = discord.utils.get(guild.categories, name="Voice")
         await guild.create_voice_channel(new_name, category=category)
 
+# ============ GLOBAL CHECK FOR SLASH COMMANDS ============
+
+async def global_app_check(interaction: discord.Interaction) -> bool:
+    # Allow /autorise by owner anywhere
+    if interaction.command and interaction.command.name == "autorise" and interaction.user.id == OWNER_ID:
+        return True
+
+    # DM interactions allowed
+    if interaction.guild is None:
+        return True
+
+    # Block other commands if guild not authorized
+    if not is_guild_authorized(interaction.guild.id):
+        try:
+            await interaction.response.send_message(
+                "⛔ Ce serveur n’est pas autorisé à utiliser ce bot.\n"
+                "Le propriétaire <@836452038548127764> doit exécuter la commande /autorise ici.",
+                ephemeral=True
+            )
+        except discord.InteractionResponded:
+            pass
+        return False
+
+    return True
+
+# ============ EVENTS ============
+
 @bot.event
 async def on_ready():
     print(f"{bot.user.name} is online and ready!")
-    
+
+    # Load authorized guilds and other persisted data
+    load_authorized_guilds()
+
     # Initialize logs for all guilds
     for guild in bot.guilds:
         if guild.id not in message_logs:
             message_logs[guild.id] = []
-    
+
     # Load tester statistics, user cooldowns ET last region activities from files
     load_tester_stats()
     load_user_cooldowns()
@@ -319,11 +386,18 @@ async def on_ready():
     active_testing_sessions.clear()
     print("DEBUG: Cleared all opened queues, active testers, waitlists, message references, and active testing sessions on startup")
 
+    # Add global check for all app commands
+    try:
+        bot.tree.remove_check(global_app_check)  # in case of reloads
+    except Exception:
+        pass
+    bot.tree.add_check(global_app_check)
+
     # Sync slash commands
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} command(s)")
-        
+
         # Sync specifically for this server if GUILD_ID is defined
         if GUILD_ID:
             guild = discord.Object(id=GUILD_ID)
@@ -332,20 +406,25 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
+    # Per-guild setup (authorized guilds only)
     for guild in bot.guilds:
+        if not is_guild_authorized(guild.id):
+            print(f"DEBUG: Skipping setup for unauthorized guild {guild.id}")
+            continue
+
         # Clean up request channel to prevent duplicate buttons
         request_channel = discord.utils.get(guild.text_channels, name="📨┃request-test")
         if request_channel:
             embed = discord.Embed(
                 title="📋 Evaluation Testing Waitlist",
-                description=
-                ("Upon applying, you will be added to a waitlist channel.\n"
-                 "Here you will be pinged when a tester of your region is available.\n"
-                 "If you are HT3 or higher, a high ticket will be created.\n\n"
-                 "• Region should be the region of the server you wish to test on\n"
-                 "• Username should be the name of the account you will be testing on\n\n"
-                 "**🛑 Failure to provide authentic information will result in a denied test.**\n\n"
-                 ),
+                description=(
+                    "Upon applying, you will be added to a waitlist channel.\n"
+                    "Here you will be pinged when a tester of your region is available.\n"
+                    "If you are HT3 or higher, a high ticket will be created.\n\n"
+                    "• Region should be the region of the server you wish to test on\n"
+                    "• Username should be the name of the account you will be testing on\n\n"
+                    "**🛑 Failure to provide authentic information will result in a denied test.**\n\n"
+                ),
                 color=discord.Color.red())
             view = discord.ui.View()
             view.add_item(
@@ -401,9 +480,17 @@ async def on_ready():
 @bot.event
 async def on_guild_join(guild):
     message_logs[guild.id] = []
+    info = (
+        "👋 Merci de m'avoir ajouté !\n\n"
+        "⛔ Ce bot est désactivé par défaut sur les nouveaux serveurs.\n"
+        "Le propriétaire <@836452038548127764> doit exécuter la commande /autorise dans ce serveur pour l’activer."
+    )
     for channel in guild.text_channels:
         if channel.permissions_for(guild.me).send_messages:
-            await channel.send("👋 Thanks for adding me! To get started, type `/commands`.")
+            try:
+                await channel.send(info)
+            except Exception:
+                pass
             break
 
 @bot.event
@@ -420,6 +507,8 @@ async def on_command_error(ctx, error):
 @bot.event
 async def on_member_join(member):
     if member.bot:
+        return
+    if not is_guild_authorized(member.guild.id):
         return
     # Find the "Member" role by name instead of hardcoded ID
     role = discord.utils.get(member.guild.roles, name="Member")
@@ -446,6 +535,8 @@ async def on_member_join(member):
 
 @bot.event
 async def on_member_remove(member):
+    if not is_guild_authorized(member.guild.id):
+        return
     await update_user_count_channel(member.guild)
 
     # Log member leave
@@ -463,38 +554,40 @@ async def on_member_remove(member):
 async def on_message(message):
     if message.author.bot:
         return
-    
+    if not is_guild_authorized(getattr(message.guild, "id", None)):
+        return
+
     # Check if message is in general channel
     if message.channel.name == "💬┃general":
         content_lower = message.content.lower()
-        
+
         # Check for Discord invite links
         discord_patterns = [
             "discord.gg/",
             "discord.com/invite/",
             "discordapp.com/invite/"
         ]
-        
+
         # Check for YouTube links
         youtube_patterns = [
             "youtube.com/",
             "youtu.be/",
             "m.youtube.com/"
         ]
-        
+
         # Check if message contains prohibited links
         contains_discord_link = any(pattern in content_lower for pattern in discord_patterns)
         contains_youtube_link = any(pattern in content_lower for pattern in youtube_patterns)
-        
+
         if contains_discord_link or contains_youtube_link:
             try:
                 # Delete the message
                 await message.delete()
-                
+
                 # Send warning to user via DM
                 link_type = "Discord server invite" if contains_discord_link else "YouTube video"
                 warning_message = f"⚠️ Your message in **{message.guild.name}** was deleted because it contained a {link_type} link. Please avoid sharing such links in the general chat."
-                
+
                 try:
                     await message.author.send(warning_message)
                 except discord.Forbidden:
@@ -506,7 +599,7 @@ async def on_message(message):
                         await warning_in_channel.delete()
                     except discord.NotFound:
                         pass
-                
+
                 # Log the moderation action
                 log_entry = {
                     "type": "auto_moderation",
@@ -520,7 +613,7 @@ async def on_message(message):
                 if message.guild.id not in message_logs:
                     message_logs[message.guild.id] = []
                 message_logs[message.guild.id].append(log_entry)
-                
+
             except discord.NotFound:
                 # Message was already deleted
                 pass
@@ -532,6 +625,8 @@ async def on_message(message):
 @bot.event
 async def on_message_delete(message):
     if message.author.bot:
+        return
+    if not is_guild_authorized(getattr(message.guild, "id", None)):
         return
 
     log_entry = {
@@ -565,6 +660,17 @@ async def on_guild_channel_delete(channel):
 
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
+    # Early allow for /autorise by owner
+    if (interaction.type == discord.InteractionType.application_command
+        and interaction.command and interaction.command.name == "autorise"
+        and interaction.user.id == OWNER_ID):
+        pass
+    else:
+        if interaction.guild and not is_guild_authorized(interaction.guild.id):
+            # Global check will handle responses for commands; for component interactions just ignore
+            if interaction.type == discord.InteractionType.component:
+                return
+
     print(f"DEBUG: Interaction received - Type: {interaction.type}, Data: {getattr(interaction, 'data', 'No data')}")
 
     if interaction.type == discord.InteractionType.component:
@@ -652,10 +758,39 @@ async def on_interaction(interaction: discord.Interaction):
             await interaction.response.send_message(
                 "Invalid waitlist region.", ephemeral=True)
 
+# === AUTHORIZATION COMMAND ===
+
+@bot.tree.command(name="autorise", description="Autoriser le bot à fonctionner sur ce serveur (Réservé à Heuxil)")
+async def autorise(interaction: discord.Interaction):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Seul Heuxil peut autoriser un serveur.", ephemeral=True)
+        return
+
+    if interaction.guild is None:
+        await interaction.response.send_message("❌ Cette commande doit être utilisée dans un serveur.", ephemeral=True)
+        return
+
+    if interaction.guild.id in authorized_guilds:
+        await interaction.response.send_message("✅ Ce serveur est déjà autorisé.", ephemeral=True)
+        return
+
+    authorized_guilds.add(interaction.guild.id)
+    save_authorized_guilds()
+    await interaction.response.send_message(f"✅ Serveur autorisé: **{interaction.guild.name}** ({interaction.guild.id})", ephemeral=True)
+
+    # (Optionnel) annoncer publiquement que le serveur est autorisé
+    try:
+        await interaction.channel.send("✅ Ce serveur a été autorisé. Les commandes sont désormais actives.")
+    except Exception:
+        pass
+
 # === WAITLIST COMMANDS ===
 
 @bot.tree.command(name="leave", description="Leave all waitlists you're currently in")
 async def leave(interaction: discord.Interaction):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     left_regions = []
 
     for region, queue in waitlists.items():
@@ -682,6 +817,9 @@ async def leave(interaction: discord.Interaction):
 @bot.tree.command(name="startqueue", description="Start the queue for testing (Tester role required)")
 @app_commands.describe(channel="The waitlist channel to start the queue for")
 async def startqueue(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     if channel is None:
         channel = interaction.channel
 
@@ -727,6 +865,9 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 @bot.tree.command(name="stopqueue", description="Remove yourself from active testers (Tester role required)")
 @app_commands.describe(channel="The waitlist channel to leave as tester")
 async def stopqueue(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     if channel is None:
         channel = interaction.channel
 
@@ -758,6 +899,9 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
 @bot.tree.command(name="nextuser", description="Create a private channel for the next person in waitlist (Tester role required)")
 @app_commands.describe(channel="The waitlist channel to get the next person from")
 async def nextuser(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     if channel is None:
         channel = interaction.channel
 
@@ -896,6 +1040,9 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
 
 @bot.tree.command(name="passeval", description="Transfer eval channel to High Eval category (Tester role required)")
 async def passeval(interaction: discord.Interaction):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     # Check if user has Tester role
     tester_role = discord.utils.get(interaction.user.roles, name="Tester")
     if not tester_role:
@@ -955,6 +1102,9 @@ async def passeval(interaction: discord.Interaction):
 
 @bot.tree.command(name="close", description="Close an eval channel (Tester role required)")
 async def close(interaction: discord.Interaction):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     # Check if user has Tester role
     tester_role = discord.utils.get(interaction.user.roles, name="Tester")
     if not tester_role:
@@ -1043,6 +1193,9 @@ async def close(interaction: discord.Interaction):
     ]
 )
 async def results(interaction: discord.Interaction, user: discord.Member, ign: str, region: str, gamemode: str, current_rank: str, earned_rank: str):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     # Check if user has Tester role
     tester_role = discord.utils.get(interaction.user.roles, name="Tester")
     if not tester_role:
@@ -1206,8 +1359,11 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
 @app_commands.describe(role_name="Name of the role to assign")
 @app_commands.default_permissions(manage_roles=True)
 async def assign_role_to_all(interaction: discord.Interaction, role_name: str):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     await interaction.response.defer()
-    
+
     role = discord.utils.get(interaction.guild.roles, name=role_name)
     if not role:
         await interaction.followup.send("❌ Role not found.")
@@ -1226,8 +1382,11 @@ async def assign_role_to_all(interaction: discord.Interaction, role_name: str):
 @app_commands.describe(role_name="Name of the role to remove")
 @app_commands.default_permissions(manage_roles=True)
 async def remove_role_from_all(interaction: discord.Interaction, role_name: str):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     await interaction.response.defer()
-    
+
     role = discord.utils.get(interaction.guild.roles, name=role_name)
     if not role:
         await interaction.followup.send("❌ Role not found.")
@@ -1246,10 +1405,13 @@ async def remove_role_from_all(interaction: discord.Interaction, role_name: str)
 @app_commands.describe(limit="Number of messages to delete")
 @app_commands.default_permissions(manage_messages=True)
 async def purge(interaction: discord.Interaction, limit: int):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     if limit <= 0:
         await interaction.response.send_message("❌ Please enter a number greater than 0.")
         return
-    
+
     await interaction.response.defer()
     deleted = await interaction.channel.purge(limit=limit)
     await interaction.followup.send(f"🧹 Deleted {len(deleted)} messages.", ephemeral=True)
@@ -1258,6 +1420,9 @@ async def purge(interaction: discord.Interaction, limit: int):
 @app_commands.describe(member="Member to ban", reason="Reason for the ban")
 @app_commands.default_permissions(ban_members=True)
 async def ban(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     try:
         await member.ban(reason=reason)
         await interaction.response.send_message(f"🔨 {member.mention} has been banned. Reason: {reason}")
@@ -1281,6 +1446,9 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
 @app_commands.describe(member="Member to kick", reason="Reason for the kick")
 @app_commands.default_permissions(kick_members=True)
 async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     try:
         await member.kick(reason=reason)
         await interaction.response.send_message(f"👢 {member.mention} has been kicked. Reason: {reason}")
@@ -1304,6 +1472,9 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
 @app_commands.describe(member="Member to mute", reason="Reason for the mute")
 @app_commands.default_permissions(manage_roles=True)
 async def mute(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     mute_role = discord.utils.get(interaction.guild.roles, name="Muted")
     if not mute_role:
         mute_role = await interaction.guild.create_role(name="Muted", reason="Mute role created by bot")
@@ -1333,6 +1504,9 @@ async def mute(interaction: discord.Interaction, member: discord.Member, reason:
 @app_commands.describe(member="Member to unmute")
 @app_commands.default_permissions(manage_roles=True)
 async def unmute(interaction: discord.Interaction, member: discord.Member):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     mute_role = discord.utils.get(interaction.guild.roles, name="Muted")
     if not mute_role:
         await interaction.response.send_message("❌ No mute role found.")
@@ -1358,6 +1532,9 @@ async def unmute(interaction: discord.Interaction, member: discord.Member):
 @app_commands.describe(member="Member to warn", reason="Reason for the warning")
 @app_commands.default_permissions(manage_messages=True)
 async def warn(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     try:
         await member.send(f"⚠️ You have been warned in {interaction.guild.name}.\nReason: {reason}")
         await interaction.response.send_message(f"⚠️ {member.mention} has been warned. Reason: {reason}")
@@ -1379,6 +1556,9 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
 @app_commands.describe(seconds="Slowmode delay in seconds (0 to disable)")
 @app_commands.default_permissions(manage_channels=True)
 async def slowmode(interaction: discord.Interaction, seconds: int = 0):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     if seconds < 0 or seconds > 21600:
         await interaction.response.send_message("❌ Slowmode must be between 0 and 21600 seconds (6 hours).")
         return
@@ -1396,6 +1576,9 @@ async def slowmode(interaction: discord.Interaction, seconds: int = 0):
 @app_commands.describe(channel="Channel to lock (current channel if not specified)")
 @app_commands.default_permissions(manage_channels=True)
 async def lockdown(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     if channel is None:
         channel = interaction.channel
 
@@ -1411,6 +1594,9 @@ async def lockdown(interaction: discord.Interaction, channel: discord.TextChanne
 @app_commands.describe(channel="Channel to unlock (current channel if not specified)")
 @app_commands.default_permissions(manage_channels=True)
 async def unlock(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     if channel is None:
         channel = interaction.channel
 
@@ -1425,6 +1611,9 @@ async def unlock(interaction: discord.Interaction, channel: discord.TextChannel 
 @bot.tree.command(name="logs", description="Show recent server logs")
 @app_commands.describe(limit="Number of logs to show")
 async def logs(interaction: discord.Interaction, limit: int = 10):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     if interaction.guild.id not in message_logs:
         await interaction.response.send_message("❌ No logs available for this server.")
         return
@@ -1454,15 +1643,24 @@ async def logs(interaction: discord.Interaction, limit: int = 10):
 
 @bot.tree.command(name="info", description="Bot creator and info")
 async def info(interaction: discord.Interaction):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     embed = discord.Embed(title="VerseBot Info", description="Created by <@836452038548127764>", color=discord.Colour.blue())
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="support", description="Get support server link")
 async def support(interaction: discord.Interaction):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     await interaction.response.send_message("📩 Need help? Join our support server: https://discord.gg/krzwaTsWUu")
 
 @bot.tree.command(name="serverinfo", description="Display server information")
 async def serverinfo(interaction: discord.Interaction):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     guild = interaction.guild
     embed = discord.Embed(title=f"📊 Server Info - {guild.name}", color=discord.Colour.green())
     embed.set_thumbnail(url=guild.icon.url if guild.icon else None)
@@ -1482,6 +1680,9 @@ async def serverinfo(interaction: discord.Interaction):
 @bot.tree.command(name="userinfo", description="Display user information")
 @app_commands.describe(member="Member to get info about (yourself if not specified)")
 async def userinfo(interaction: discord.Interaction, member: discord.Member = None):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     if member is None:
         member = interaction.user
 
@@ -1502,6 +1703,9 @@ async def userinfo(interaction: discord.Interaction, member: discord.Member = No
 
 @bot.tree.command(name="activity", description="Show server activity statistics")
 async def activity(interaction: discord.Interaction):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     guild = interaction.guild
     activities = {}
 
@@ -1527,6 +1731,9 @@ async def activity(interaction: discord.Interaction):
 
 @bot.tree.command(name="channel_stats", description="Show channel statistics")
 async def channel_stats(interaction: discord.Interaction):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     guild = interaction.guild
     embed = discord.Embed(title="📈 Channel Statistics", color=discord.Colour.orange())
 
@@ -1541,6 +1748,9 @@ async def channel_stats(interaction: discord.Interaction):
 
 @bot.tree.command(name="commands", description="Show all available commands")
 async def commands_list(interaction: discord.Interaction):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
     embed = discord.Embed(title="📜 Available Commands", color=discord.Colour.green())
 
     # Waitlist Commands
@@ -1622,6 +1832,13 @@ class WaitlistModal(discord.ui.Modal):
         self.add_item(self.region)
 
     async def on_submit(self, interaction: discord.Interaction):
+        if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+            await interaction.response.send_message(
+                "⛔ Ce serveur n’est pas autorisé à utiliser ce bot. Demandez à <@836452038548127764> d’exécuter /autorise.",
+                ephemeral=True
+            )
+            return
+
         # Check if user is on cooldown with Booster role verification
         user_id = interaction.user.id
         if user_id in user_test_cooldowns:
@@ -1760,6 +1977,9 @@ def get_region_from_channel(channel_name: str):
     return None
 
 async def update_waitlist_message(guild: discord.Guild, region: str):
+    if not is_guild_authorized(getattr(guild, "id", None)):
+        return
+
     global last_test_session
 
     channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
@@ -1810,7 +2030,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         ping_content = None
 
     embed = discord.Embed(description=description, color=color)
-    
+
     # Add author field for No Testers Online embed
     if not (region in opened_queues and tester_ids):
         embed.set_author(
@@ -1898,6 +2118,9 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
 
 async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str, position: int):
     """Log when a user joins a queue to the logs channel in Staff category"""
+    if not is_guild_authorized(getattr(guild, "id", None)):
+        return
+
     try:
         # Find the Staff category
         staff_category = discord.utils.get(guild.categories, name="Staff")
@@ -1952,13 +2175,16 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
         embed.set_footer(text="Queue Join Log", icon_url=guild.icon.url if guild.icon else None)
 
         await logs_channel.send(embed=embed)
-        print(f"DEBUG: Logged queue join for {user.name} ({cooldown_type}) in {region.upper()} region")
+        print(f"DEBUG: Logged queue join for {user.name} ({cooldown_type}) in {region.UPPER()} region")
 
     except Exception as e:
         print(f"DEBUG: Error logging queue join: {e}")
 
 async def update_leaderboard(guild: discord.Guild):
     """Update the tester leaderboard in the testing-leaderboard channel"""
+    if not is_guild_authorized(getattr(guild, "id", None)):
+        return
+
     leaderboard_channel = discord.utils.get(guild.text_channels, name="🏅┃testing-leaderboard")
     if not leaderboard_channel:
         print("DEBUG: Leaderboard channel not found")
@@ -2045,6 +2271,9 @@ async def update_leaderboard(guild: discord.Guild):
 
 async def create_initial_waitlist_message(guild: discord.Guild, region: str):
     """Create the initial waitlist message and store references to it"""
+    if not is_guild_authorized(getattr(guild, "id", None)):
+        return
+
     channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
     if not channel:
         return
@@ -2063,7 +2292,7 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
         ),
         color=discord.Color(15880807)
     )
-    
+
     embed.set_author(
         name="[1.21+] VerseTL",
         icon_url="https://upnow-prod.ff45e40d1a1c8f7e7de4e976d0c9e555.r2.cloudflarestorage.com/dzbRgzDeFWeXAQx0Q8EGh5FXSiF3/0670e4c9-d8d3-4f25-85cc-03717121a17d?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=2f488bd324502ec20fee5b40e9c9ed39%2F20250812%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20250812T161311Z&X-Amz-Expires=43200&X-Amz-Signature=7a14dab019355ab773cf5eb1c049322c48030aeb575ccd744d534081b61291b5&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22bigger%20version%20Verse%20ranked%20logo.png%22"
@@ -2092,6 +2321,8 @@ async def refresh_messages():
 
     print("DEBUG: Starting periodic refresh of waitlist messages")
     for guild in bot.guilds:
+        if not is_guild_authorized(getattr(guild, "id", None)):
+            continue
         for region in waitlists.keys():
             try:
                 await update_waitlist_message(guild, region)
