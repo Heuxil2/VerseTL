@@ -13,7 +13,7 @@ from googleapiclient.discovery import build
 import googleapiclient.errors
 
 load_dotenv()
-TOKEN = os.getenv("TOKEN") or "MTQwMTk1NDUyMDIwNzk4Njg0OA.GUDr6e.K9jeXg0r2YWBM4tzjJy_uJlRJ2VBcpX2Za1LMk"
+TOKEN = os.getenv("TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0")) if os.getenv("GUILD_ID") else None
 
 intents = discord.Intents.all()
