@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Effective date: [YYYY-MM-DD]
+Effective date: [2025-8-14]
 
 [Owner/Company Legal Name] ("we," "us," or "our") operates [Bot Name] (the "Service"). This Privacy Policy explains how we collect, use, disclose, and safeguard information when you use the Service. If you do not agree with the terms of this Privacy Policy, please do not use the Service.
 
@@ -56,3 +56,4 @@ Effective date: [YYYY-MM-DD]
 - Slack: We follow Slack’s platform policies and respect workspace admin controls.
 
 If any provision of this Policy is found unenforceable, the remaining provisions remain in effect.
+
