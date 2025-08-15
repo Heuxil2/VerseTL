@@ -1,4 +1,4 @@
-import discord
+#import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import asyncio
@@ -17,6 +17,7 @@ import googleapiclient.errors
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0")) if os.getenv("GUILD_ID") else None
+print(f"DEBUG: Env loaded. GUILD_ID={GUILD_ID} (type={type(GUILD_ID).__name__})")
 
 # Bot owner (Heuxil) and server authorization persistence
 OWNER_ID = 836452038548127764  # Heuxil
@@ -371,13 +372,17 @@ async def on_ready():
     bot.tree.add_check(global_app_check)
 
     try:
+        # Global sync (may take time to propagate globally)
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} command(s)")
+        print(f"Synced {len(synced)} global command(s)")
 
-        if GUILD_ID:
-            guild = discord.Object(id=GUILD_ID)
-            synced_guild = await bot.tree.sync(guild=guild)
-            print(f"DEBUG: Synced {len(synced_guild)} slash command(s) for guild {GUILD_ID}")
+        # Force per-guild sync for every guild the bot is in (instant)
+        for g in bot.guilds:
+            try:
+                sg = await bot.tree.sync(guild=discord.Object(id=g.id))
+                print(f"DEBUG: Per-guild synced {len(sg)} command(s) for guild {g.id} ({g.name})")
+            except Exception as eg:
+                print(f"DEBUG: Per-guild sync failed for {g.id}: {eg}")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
@@ -694,7 +699,7 @@ async def on_interaction(interaction: discord.Interaction):
             embed = discord.Embed(title="❌ Invalid Region", description="Invalid waitlist region.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# === AUTHORIZATION COMMAND ===
+# === AUTHORIZATION/UTILITY COMMANDS ===
 
 @bot.tree.command(name="authorize", description="Authorize the bot to operate in this server (Owner only)")
 async def authorize(interaction: discord.Interaction):
@@ -721,6 +726,56 @@ async def authorize(interaction: discord.Interaction):
         await interaction.channel.send("✅ This server has been authorized. Commands are now active.")
     except Exception:
         pass
+
+@bot.tree.command(name="sync", description="Owner only: Sync slash commands in this server")
+async def sync_cmd(interaction: discord.Interaction):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message(
+            embed=discord.Embed(title="❌ Not Allowed", description="Owner only.", color=discord.Color.red()),
+            ephemeral=True
+        )
+        return
+    try:
+        sg = await bot.tree.sync(guild=interaction.guild)
+        await interaction.response.send_message(
+            embed=discord.Embed(title="✅ Synced", description=f"Synced {len(sg)} command(s) to this server.", color=discord.Color.green()),
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.response.send_message(
+            embed=discord.Embed(title="⚠️ Sync failed", description=str(e), color=discord.Color.red()),
+            ephemeral=True
+        )
+
+@bot.tree.command(name="diagnose", description="Owner only: Show debug info for command registration")
+async def diagnose(interaction: discord.Interaction):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message(
+            embed=discord.Embed(title="❌ Not Allowed", description="Owner only.", color=discord.Color.red()),
+            ephemeral=True
+        )
+        return
+    try:
+        app_info = await bot.application_info()
+        gid = interaction.guild.id if interaction.guild else None
+        authorized = is_guild_authorized(gid) if gid else False
+        desc = (
+            f"Guild ID (here): {gid}\n"
+            f"Env GUILD_ID: {GUILD_ID}\n"
+            f"Bot User: {bot.user} (ID: {bot.user.id})\n"
+            f"App ID: {app_info.id}\n"
+            f"Authorized here: {authorized}\n"
+            f"Guild count: {len(bot.guilds)}"
+        )
+        await interaction.response.send_message(
+            embed=discord.Embed(title="🧪 Diagnose", description=desc, color=discord.Color.blurple()),
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.response.send_message(
+            embed=discord.Embed(title="⚠️ Diagnose failed", description=str(e), color=discord.Color.red()),
+            ephemeral=True
+        )
 
 # === WAITLIST COMMANDS ===
 
