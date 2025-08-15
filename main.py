@@ -440,15 +440,18 @@ async def on_ready():
 @bot.event
 async def on_guild_join(guild):
     message_logs[guild.id] = []
-    info = (
-        "👋 Thanks for adding me!\n\n"
-        "⛔ This bot is disabled by default on new servers.\n"
-        "The owner <@836452038548127764> must run /authorize in this server to enable it."
+    embed = discord.Embed(
+        title="👋 Thanks for adding me!",
+        description=(
+            "⛔ This bot is disabled by default on new servers.\n"
+            "The owner <@836452038548127764> must run /authorize in this server to enable it."
+        ),
+        color=discord.Color.blurple()
     )
     for channel in guild.text_channels:
         if channel.permissions_for(guild.me).send_messages:
             try:
-                await channel.send(info)
+                await channel.send(embed=embed)
             except Exception:
                 pass
             break
@@ -550,7 +553,12 @@ async def on_message(message):
                 try:
                     await message.author.send(warning_message)
                 except discord.Forbidden:
-                    warning_in_channel = await message.channel.send(f"⚠️ {message.author.mention}, please avoid sharing {link_type} links in this channel.")
+                    warn_embed = discord.Embed(
+                        title="⚠️ Link Removed",
+                        description=f"{message.author.mention}, please avoid sharing {link_type} links in this channel.",
+                        color=discord.Color.orange()
+                    )
+                    warning_in_channel = await message.channel.send(embed=warn_embed)
                     await asyncio.sleep(10)
                     try:
                         await warning_in_channel.delete()
@@ -712,10 +720,23 @@ async def authorize(interaction: discord.Interaction):
 
     authorized_guilds.add(interaction.guild.id)
     save_authorized_guilds()
-    await interaction.response.send_message(f"✅ Server authorized: **{interaction.guild.name}** ({interaction.guild.id})", ephemeral=True)
+    await interaction.response.send_message(
+        embed=discord.Embed(
+            title="✅ Server Authorized",
+            description=f"Server **{interaction.guild.name}** (`{interaction.guild.id}`) is now authorized.",
+            color=discord.Color.green()
+        ),
+        ephemeral=True
+    )
 
     try:
-        await interaction.channel.send("✅ This server has been authorized. Commands are now active.")
+        await interaction.channel.send(
+            embed=discord.Embed(
+                title="✅ Server Authorized",
+                description="This server has been authorized. Commands are now active.",
+                color=discord.Color.green()
+            )
+        )
     except Exception:
         pass
 
@@ -790,7 +811,14 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     waitlist_channel = discord.utils.get(interaction.guild.text_channels, name=f"waitlist-{region}")
 
-    await interaction.response.send_message(f"{region.upper()} waitlist is now active in {waitlist_channel.mention}. You are now an active tester.", ephemeral=True)
+    await interaction.response.send_message(
+        embed=discord.Embed(
+            title="🟢 Queue Started",
+            description=f"{region.upper()} waitlist is now active in {waitlist_channel.mention}. You are now an active tester.",
+            color=discord.Color.green()
+        ),
+        ephemeral=True
+    )
 
     await update_waitlist_message(interaction.guild, region)
 
@@ -823,7 +851,14 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
             waitlists[region] = []
 
         await update_waitlist_message(interaction.guild, region)
-        await interaction.response.send_message(f"You have been removed from active testers for {region.upper()} in {channel.mention}.", ephemeral=True)
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="👋 Left Active Testers",
+                description=f"You have been removed from active testers for {region.upper()} in {channel.mention}.",
+                color=discord.Color.blurple()
+            ),
+            ephemeral=True
+        )
     else:
         embed = discord.Embed(title="ℹ️ Not Active", description=f"You are not an active tester for {region.upper()}.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -929,7 +964,14 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
 
         await update_waitlist_message(interaction.guild, region)
 
-        await interaction.response.send_message(f"Created private channel {new_channel.mention} for {next_user.mention}.", ephemeral=True)
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="🆕 Private Channel Created",
+                description=f"Created {new_channel.mention} for {next_user.mention}.",
+                color=discord.Color.green()
+            ),
+            ephemeral=True
+        )
 
         cooldown_days = apply_cooldown(next_user_id, next_user)
         role_type = "Booster" if has_booster_role(next_user) else "regular"
@@ -1251,7 +1293,14 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
 
     confirmation_parts.append("✅ Testing session completed")
 
-    await interaction.response.send_message("\n".join(confirmation_parts), ephemeral=True)
+    await interaction.response.send_message(
+        embed=discord.Embed(
+            title="📣 Results Posted",
+            description="\n".join(confirmation_parts),
+            color=discord.Color.green() if role_given else discord.Color.orange()
+        ),
+        ephemeral=True
+    )
 
 # === MODERATION COMMANDS ===
 
@@ -1277,7 +1326,13 @@ async def assign_role_to_all(interaction: discord.Interaction, role_name: str):
                 count += 1
             except:
                 pass
-    await interaction.followup.send(f"✅ Role `{role.name}` assigned to {count} members.")
+    await interaction.followup.send(
+        embed=discord.Embed(
+            title="✅ Role Assigned",
+            description=f"Role `{role.name}` assigned to {count} members.",
+            color=discord.Color.green()
+        )
+    )
 
 @bot.tree.command(name="remove_role_from_all", description="Remove role from all members")
 @app_commands.describe(role_name="Name of the role to remove")
@@ -1301,7 +1356,13 @@ async def remove_role_from_all(interaction: discord.Interaction, role_name: str)
                 count += 1
             except:
                 pass
-    await interaction.followup.send(f"🗑️ Role `{role.name}` removed from {count} members.")
+    await interaction.followup.send(
+        embed=discord.Embed(
+            title="🗑️ Role Removed",
+            description=f"Role `{role.name}` removed from {count} members.",
+            color=discord.Color.orange()
+        )
+    )
 
 @bot.tree.command(name="purge", description="Delete recent messages")
 @app_commands.describe(limit="Number of messages to delete")
@@ -1317,7 +1378,14 @@ async def purge(interaction: discord.Interaction, limit: int):
 
     await interaction.response.defer()
     deleted = await interaction.channel.purge(limit=limit)
-    await interaction.followup.send(f"🧹 Deleted {len(deleted)} messages.", ephemeral=True)
+    await interaction.followup.send(
+        embed=discord.Embed(
+            title="🧹 Purge Complete",
+            description=f"Deleted {len(deleted)} messages.",
+            color=discord.Color.orange()
+        ),
+        ephemeral=True
+    )
 
 @bot.tree.command(name="ban", description="Ban a member from the server")
 @app_commands.describe(member="Member to ban", reason="Reason for the ban")
@@ -1328,7 +1396,13 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
 
     try:
         await member.ban(reason=reason)
-        await interaction.response.send_message(f"🔨 {member.mention} has been banned. Reason: {reason}")
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="🔨 User Banned",
+                description=f"{member.mention} has been banned.\nReason: {reason}",
+                color=discord.Color.red()
+            )
+        )
 
         log_entry = {
             "type": "ban",
@@ -1355,7 +1429,13 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
 
     try:
         await member.kick(reason=reason)
-        await interaction.response.send_message(f"👢 {member.mention} has been kicked. Reason: {reason}")
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="👢 User Kicked",
+                description=f"{member.mention} has been kicked.\nReason: {reason}",
+                color=discord.Color.orange()
+            )
+        )
 
         log_entry = {
             "type": "kick",
@@ -1389,7 +1469,13 @@ async def mute(interaction: discord.Interaction, member: discord.Member, reason:
 
     try:
         await member.add_roles(mute_role, reason=reason)
-        await interaction.response.send_message(f"🔇 {member.mention} has been muted. Reason: {reason}")
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="🔇 User Muted",
+                description=f"{member.mention} has been muted.\nReason: {reason}",
+                color=discord.Color.orange()
+            )
+        )
 
         log_entry = {
             "type": "mute",
@@ -1419,7 +1505,13 @@ async def unmute(interaction: discord.Interaction, member: discord.Member):
 
     try:
         await member.remove_roles(mute_role)
-        await interaction.response.send_message(f"🔊 {member.mention} has been unmuted.")
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="🔊 User Unmuted",
+                description=f"{member.mention} has been unmuted.",
+                color=discord.Color.green()
+            )
+        )
 
         log_entry = {
             "type": "unmute",
@@ -1442,7 +1534,13 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
 
     try:
         await member.send(f"⚠️ You have been warned in {interaction.guild.name}.\nReason: {reason}")
-        await interaction.response.send_message(f"⚠️ {member.mention} has been warned. Reason: {reason}")
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="⚠️ User Warned",
+                description=f"{member.mention} has been warned.\nReason: {reason}",
+                color=discord.Color.orange()
+            )
+        )
 
         log_entry = {
             "type": "warn",
@@ -1472,9 +1570,21 @@ async def slowmode(interaction: discord.Interaction, seconds: int = 0):
     try:
         await interaction.channel.edit(slowmode_delay=seconds)
         if seconds == 0:
-            await interaction.response.send_message("🚀 Slowmode disabled.")
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="🚀 Slowmode Disabled",
+                    description="Slowmode is now off for this channel.",
+                    color=discord.Color.green()
+                )
+            )
         else:
-            await interaction.response.send_message(f"🌀 Slowmode set to {seconds} seconds.")
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="🌀 Slowmode Set",
+                    description=f"Slowmode set to {seconds} seconds.",
+                    color=discord.Color.blurple()
+                )
+            )
     except Exception as e:
         embed = discord.Embed(title="⚠️ Error", description=f"An error occurred: {e}", color=discord.Color.red())
         await interaction.response.send_message(embed=embed)
@@ -1493,7 +1603,13 @@ async def lockdown(interaction: discord.Interaction, channel: discord.TextChanne
         overwrite = channel.overwrites_for(interaction.guild.default_role)
         overwrite.send_messages = False
         await channel.set_permissions(interaction.guild.default_role, overwrite=overwrite)
-        await interaction.response.send_message(f"🔒 {channel.mention} has been locked down.")
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="🔒 Channel Locked",
+                description=f"{channel.mention} has been locked down.",
+                color=discord.Color.dark_grey()
+            )
+        )
     except Exception as e:
         embed = discord.Embed(title="⚠️ Error", description=f"An error occurred: {e}", color=discord.Color.red())
         await interaction.response.send_message(embed=embed)
@@ -1512,7 +1628,13 @@ async def unlock(interaction: discord.Interaction, channel: discord.TextChannel 
         overwrite = channel.overwrites_for(interaction.guild.default_role)
         overwrite.send_messages = None
         await channel.set_permissions(interaction.guild.default_role, overwrite=overwrite)
-        await interaction.response.send_message(f"🔓 {channel.mention} has been unlocked.")
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="🔓 Channel Unlocked",
+                description=f"{channel.mention} has been unlocked.",
+                color=discord.Color.green()
+            )
+        )
     except Exception as e:
         embed = discord.Embed(title="⚠️ Error", description=f"An error occurred: {e}", color=discord.Color.red())
         await interaction.response.send_message(embed=embed)
@@ -1530,7 +1652,13 @@ async def logs(interaction: discord.Interaction, limit: int = 10):
 
     last_logs = message_logs[interaction.guild.id][-limit:]
     if not last_logs:
-        await interaction.response.send_message("📝 No recent logs found.")
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="📝 No Recent Logs",
+                description="There are no recent logs to display.",
+                color=discord.Color.blurple()
+            )
+        )
         return
 
     embed = discord.Embed(title="📝 Recent Server Logs", color=discord.Colour.blue())
@@ -1564,7 +1692,13 @@ async def support(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    await interaction.response.send_message("📩 Need help? Join our support server: https://discord.gg/krzwaTsWUu")
+    await interaction.response.send_message(
+        embed=discord.Embed(
+            title="📩 Support",
+            description="Need help? Join our support server: https://discord.gg/krzwaTsWUu",
+            color=discord.Color.blurple()
+        )
+    )
 
 @bot.tree.command(name="serverinfo", description="Display server information")
 async def serverinfo(interaction: discord.Interaction):
@@ -1628,7 +1762,13 @@ async def activity(interaction: discord.Interaction):
                 activities[activity_name] = 1
 
     if not activities:
-        await interaction.response.send_message("📊 No activities detected among server members.")
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="📊 No Activity",
+                description="No activities detected among server members.",
+                color=discord.Color.blurple()
+            )
+        )
         return
 
     embed = discord.Embed(title="🎮 Server Activity Stats", color=discord.Colour.purple())
@@ -2218,4 +2358,3 @@ async def periodic_save_activities():
 
 keep_alive()
 bot.run(TOKEN)
-
