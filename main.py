@@ -236,28 +236,78 @@ def save_last_region_activity():
         print(f"DEBUG: Error saving last region activities: {e}")
 
 def load_last_region_activity():
+    """Load last region activity per guild, with backward compatibility for legacy schema."""
     try:
-        if os.path.exists(LAST_ACTIVITY_FILE):
-            with open(LAST_ACTIVITY_FILE, 'r') as f:
-                data = json.load(f)
-            for gid_str, regions in data.items():
-                gid = int(gid_str)
-                gs = get_guild_state(gid)
+        if not os.path.exists(LAST_ACTIVITY_FILE):
+            print("DEBUG: No existing last activity file found, starting fresh")
+            return
+
+        with open(LAST_ACTIVITY_FILE, 'r') as f:
+            data = json.load(f)
+
+        if not isinstance(data, dict):
+            print("DEBUG: LAST_ACTIVITY_FILE content not a dict, ignoring")
+            return
+
+        # Legacy schema detection: top-level keys are regions (na/eu/as/au)
+        legacy_region_keys = {"na", "eu", "as", "au"}
+        top_keys_lower = {str(k).lower() for k in data.keys()}
+        is_legacy = top_keys_lower.issuperset(legacy_region_keys) and all(
+            k in legacy_region_keys for k in top_keys_lower
+        )
+
+        if is_legacy:
+            print("DEBUG: Detected legacy LAST_ACTIVITY_FILE schema, migrating...")
+            # Apply the same last-activity map to all currently known guilds
+            legacy_map = {k.lower(): v for k, v in data.items() if str(k).lower() in legacy_region_keys}
+            for guild in bot.guilds:
+                gs = get_guild_state(guild.id)
                 for region in ["na", "eu", "as", "au"]:
-                    val = regions.get(region)
-                    if val is not None:
+                    val = legacy_map.get(region)
+                    if val:
                         try:
                             gs["last_region_activity"][region] = datetime.datetime.fromisoformat(val)
-                            time_ago = datetime.datetime.now() - gs["last_region_activity"][region]
-                            print(f"DEBUG: Loaded last activity for guild {gid} {region.upper()}: {time_ago.days} days ago")
-                        except (ValueError, TypeError) as e:
-                            print(f"DEBUG: Error parsing last activity for guild {gid} {region}: {e}")
+                        except Exception as e:
+                            print(f"DEBUG: Legacy parse error for {region} value {val}: {e}")
                             gs["last_region_activity"][region] = None
                     else:
                         gs["last_region_activity"][region] = None
-            print(f"DEBUG: Loaded last region activities from {LAST_ACTIVITY_FILE}")
-        else:
-            print("DEBUG: No existing last activity file found, starting fresh")
+                    # Log what we loaded
+                    ts = gs["last_region_activity"][region]
+                    if ts:
+                        delta = datetime.datetime.now() - ts
+                        print(f"DEBUG: Loaded last activity (migrated) for guild {guild.id} {region.upper()}: {delta.days} days ago")
+            # Immediately resave in new schema
+            save_last_region_activity()
+            print("DEBUG: Migration complete; new schema saved.")
+            return
+
+        # New schema: { "<guild_id>": { "na": "...", "eu": "...", ... }, ... }
+        for gid_str, regions in data.items():
+            try:
+                gid = int(gid_str)
+            except ValueError:
+                print(f"DEBUG: Skipping invalid guild id key in LAST_ACTIVITY_FILE: {gid_str}")
+                continue
+
+            gs = get_guild_state(gid)
+            for region in ["na", "eu", "as", "au"]:
+                val = None
+                if isinstance(regions, dict):
+                    val = regions.get(region)
+                if val is not None:
+                    try:
+                        gs["last_region_activity"][region] = datetime.datetime.fromisoformat(val)
+                        time_ago = datetime.datetime.now() - gs["last_region_activity"][region]
+                        print(f"DEBUG: Loaded last activity for guild {gid} {region.upper()}: {time_ago.days} days ago")
+                    except (ValueError, TypeError) as e:
+                        print(f"DEBUG: Error parsing last activity for guild {gid} {region}: {e}")
+                        gs["last_region_activity"][region] = None
+                else:
+                    gs["last_region_activity"][region] = None
+
+        print(f"DEBUG: Loaded last region activities from {LAST_ACTIVITY_FILE}")
+
     except Exception as e:
         print(f"DEBUG: Error loading last region activities: {e}")
 
