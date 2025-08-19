@@ -792,15 +792,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     print(f"DEBUG: /startqueue called by {interaction.user.name} for channel {channel.name}")
 
-    # Check for multiple possible tester role names
-    tester_role = None
-    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester"]
-    
-    for role in interaction.user.roles:
-        if role.name in tester_role_names:
-            tester_role = role
-            break
-    
+    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
     if not tester_role:
         embed = discord.Embed(
             title="❌ Tester Role Required", 
@@ -2098,8 +2090,11 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
          for i, uid in enumerate(tester_ids)]) or "*No testers online*"
 
     region_last_active = last_region_activity.get(region)
-    timestamp = region_last_active.strftime(
-        "%B %d, %Y %I:%M %p") if region_last_active else "Never"
+    if region_last_active:
+        timestamp_unix = int(region_last_active.timestamp())
+        timestamp = f"<t:{timestamp_unix}:R>"
+    else:
+        timestamp = "Never"
 
     if region in opened_queues and tester_ids:
         color = discord.Color.from_rgb(220, 80, 120)
@@ -2362,7 +2357,7 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
             f"No testers for your region are available at this time.\n"
             f"You will be pinged when a tester is available.\n"
             f"Check back later!\n\n"
-            f"Last Test At: `<t:{timestamp}:R>`"
+            f"Last Test At: `{timestamp}`"
         ),
         color=discord.Color(15880807)
     )
