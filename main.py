@@ -706,8 +706,8 @@ async def on_interaction(interaction: discord.Interaction):
                 # Block restricted users from opening the form
                 if has_restricted_role(interaction.user):
                     embed = discord.Embed(
-                        title="⛔ Accès refusé",
-                        description="Tu es actuellement restreint de la tierlist et ne peux pas entrer en file d’attente.",
+                        title="⛔ Access denied",
+                        description="You are currently restricted from the tierlist and cannot enter the queue.",
                         color=discord.Color.red()
                     )
                     await interaction.response.send_message(embed=embed, ephemeral=True)
