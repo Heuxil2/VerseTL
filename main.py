@@ -792,7 +792,15 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     print(f"DEBUG: /startqueue called by {interaction.user.name} for channel {channel.name}")
 
-    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
+    # Check for multiple possible tester role names
+    tester_role = None
+    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester"]
+    
+    for role in interaction.user.roles:
+        if role.name in tester_role_names:
+            tester_role = role
+            break
+    
     if not tester_role:
         embed = discord.Embed(
             title="❌ Tester Role Required", 
@@ -841,6 +849,9 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     print(f"DEBUG: Successfully started queue for {region}")
 
+    # Notify the first user in queue that a tester is now available
+    await notify_first_in_queue(interaction.guild, region, interaction.user)
+    
     await update_waitlist_message(interaction.guild, region)
 
 @bot.tree.command(name="stopqueue", description="Remove yourself from active testers (Tester role required)")
@@ -2092,7 +2103,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     region_last_active = last_region_activity.get(region)
     if region_last_active:
         timestamp_unix = int(region_last_active.timestamp())
-        timestamp = f"<t:{timestamp}:R>"
+        timestamp = f"<t:{timestamp_unix}:R>"
     else:
         timestamp = "Never"
 
@@ -2111,7 +2122,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
             f"No testers for your region are available at this time.\n"
             f"You will be pinged when a tester is available.\n"
             f"Check back later!\n\n"
-            f"Last Test At: f"<t:{timestamp}:R>")
+            f"Last Test At: {timestamp}")
         show_button = False
         ping_content = None
 
@@ -2339,6 +2350,52 @@ async def update_leaderboard(guild: discord.Guild):
     except Exception as e:
         print(f"DEBUG: Error updating leaderboard: {e}")
 
+async def notify_first_in_queue(guild: discord.Guild, region: str, tester: discord.Member):
+    """Notify the first person in queue via DM that a tester is now available"""
+    if not is_guild_authorized(getattr(guild, "id", None)):
+        return
+        
+    if not waitlists[region]:
+        return
+        
+    first_user_id = waitlists[region][0]
+    first_user = guild.get_member(first_user_id)
+    
+    if not first_user:
+        return
+        
+    try:
+        user_data = user_info.get(first_user_id, {})
+        ign = user_data.get('ign', 'N/A')
+        preferred_server = user_data.get('server', 'N/A')
+        
+        embed = discord.Embed(
+            title="🎮 Tester Available!",
+            description=f"Good news! A tester is now available for the **{region.upper()}** region.\n\nYou are **first in queue** and can now be selected for testing!",
+            color=0x00ff00
+        )
+        
+        embed.add_field(name="📍 Region", value=region.upper(), inline=True)
+        embed.add_field(name="👤 Your IGN", value=ign, inline=True)
+        embed.add_field(name="🎯 Preferred Server", value=preferred_server, inline=True)
+        
+        embed.add_field(
+            name="📢 Next Steps", 
+            value=f"Visit the {guild.name} server and check <#waitlist-{region}> for updates. You may be selected soon!", 
+            inline=False
+        )
+        
+        embed.set_thumbnail(url=guild.icon.url if guild.icon else None)
+        embed.set_footer(text=f"VerseTL Testing System • {guild.name}", icon_url=guild.icon.url if guild.icon else None)
+        
+        await first_user.send(embed=embed)
+        print(f"DEBUG: Sent DM notification to {first_user.name} (first in {region.upper()} queue)")
+        
+    except discord.Forbidden:
+        print(f"DEBUG: Could not send DM to {first_user.name} - DMs disabled")
+    except Exception as e:
+        print(f"DEBUG: Error sending DM to first user in queue: {e}")
+
 async def create_initial_waitlist_message(guild: discord.Guild, region: str):
     """Create the initial waitlist message and store references to it"""
     if not is_guild_authorized(getattr(guild, "id", None)):
@@ -2349,7 +2406,11 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
         return
 
     region_last_active = last_region_activity.get(region)
-    timestamp = region_last_active.strftime("%B %d, %Y %I:%M %p") if region_last_active else "Never"
+    if region_last_active:
+        timestamp_unix = int(region_last_active.timestamp())
+        timestamp = f"<t:{timestamp_unix}:R>"
+    else:
+        timestamp = "Never"
 
     embed = discord.Embed(
         title="No Testers Online",
@@ -2357,7 +2418,7 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
             f"No testers for your region are available at this time.\n"
             f"You will be pinged when a tester is available.\n"
             f"Check back later!\n\n"
-            f"Last Test At: `{timestamp}`"
+            f"Last Test At: {timestamp}"
         ),
         color=discord.Color(15880807)
     )
