@@ -2362,7 +2362,7 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
             f"No testers for your region are available at this time.\n"
             f"You will be pinged when a tester is available.\n"
             f"Check back later!\n\n"
-            f"Last Test At: `{timestamp}`"
+            f"Last Test At: `<t:{timestamp}:R>`"
         ),
         color=discord.Color(15880807)
     )
