@@ -2092,7 +2092,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     region_last_active = last_region_activity.get(region)
     if region_last_active:
         timestamp_unix = int(region_last_active.timestamp())
-        timestamp = f"<t:{timestamp_unix}:R>"
+        timestamp = f"<t:{timestamp}:R>"
     else:
         timestamp = "Never"
 
@@ -2111,7 +2111,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
             f"No testers for your region are available at this time.\n"
             f"You will be pinged when a tester is available.\n"
             f"Check back later!\n\n"
-            f"Last Test At: {timestamp}")
+            f"Last Test At: f"<t:{timestamp}:R>")
         show_button = False
         ping_content = None
 
