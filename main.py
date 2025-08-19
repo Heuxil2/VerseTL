@@ -130,6 +130,9 @@ def has_booster_role(member: discord.Member) -> bool:
     booster_role = discord.utils.get(member.roles, name="Booster")
     return booster_role is not None
 
+def has_restricted_role(member: discord.Member) -> bool:
+    return discord.utils.get(member.roles, name="Tierlist restricted") is not None
+
 def get_cooldown_duration(member: discord.Member) -> int:
     return BOOSTER_COOLDOWN_DAYS if has_booster_role(member) else REGULAR_COOLDOWN_DAYS
 
@@ -299,7 +302,7 @@ def load_last_region_activity():
                     try:
                         gs["last_region_activity"][region] = datetime.datetime.fromisoformat(val)
                         time_ago = datetime.datetime.now() - gs["last_region_activity"][region]
-                        print(f"DEBUG: Loaded last activity for guild {gid} {region.upper()}: {time_ago.days} days ago")
+                        print(f"DEBUG: Loaded last activity for guild {gid} {region.UPPER()}: {time_ago.days} days ago")
                     except (ValueError, TypeError) as e:
                         print(f"DEBUG: Error parsing last activity for guild {gid} {region}: {e}")
                         gs["last_region_activity"][region] = None
@@ -700,6 +703,16 @@ async def on_interaction(interaction: discord.Interaction):
         if custom_id == "open_form":
             # Allow in any channel that resembles request-test
             if "request-test" in interaction.channel.name.lower():
+                # Block restricted users from opening the form
+                if has_restricted_role(interaction.user):
+                    embed = discord.Embed(
+                        title="⛔ Accès refusé",
+                        description="Tu es actuellement restreint de la tierlist et ne peux pas entrer en file d’attente.",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+
                 modal = WaitlistModal()
                 await interaction.response.send_modal(modal)
                 return
@@ -707,6 +720,17 @@ async def on_interaction(interaction: discord.Interaction):
             region = get_region_from_channel(interaction.channel.name)
             if region and interaction.guild:
                 gs = get_guild_state(interaction.guild.id)
+
+                # Block restricted users from joining queue via waitlist channels
+                if has_restricted_role(interaction.user):
+                    embed = discord.Embed(
+                        title="⛔ Accès refusé",
+                        description="Tu es actuellement restreint de la tierlist et ne peux pas rejoindre la file d’attente.",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+
                 user_id = interaction.user.id
                 if user_id not in gs["user_info"]:
                     embed = discord.Embed(title="❌ Form Required", description="You must submit the form in <#📨┃request-test> before joining the queue.", color=discord.Color.red())
@@ -750,7 +774,7 @@ async def on_interaction(interaction: discord.Interaction):
                         pass
 
                 await interaction.response.send_message(
-                    f"✅ Successfully joined the {region.upper()} queue! You are position #{len(gs['waitlists'][region])} in line.",
+                    f"✅ Successfully joined the {region.UPPER()} queue! You are position #{len(gs['waitlists'][region])} in line.",
                     ephemeral=True)
 
                 await log_queue_join(interaction.guild, interaction.user, region, len(gs["waitlists"][region]))
@@ -863,7 +887,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     gs["last_region_activity"][region] = datetime.datetime.now()
     save_last_region_activity()
-    print(f"DEBUG: Updated and saved last activity for {region.upper()}")
+    print(f"DEBUG: Updated and saved last activity for {region.UPPER()}")
 
     if interaction.user.id not in gs["active_testers"][region]:
         gs["active_testers"][region].append(interaction.user.id)
@@ -876,7 +900,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
     await interaction.response.send_message(
         embed=discord.Embed(
             title="Queue Started",
-            description=f"{region.upper()} waitlist is now active in {waitlist_channel.mention if waitlist_channel else f'#waitlist-{region}'} . You are now an active tester.",
+            description=f"{region.UPPER()} waitlist is now active in {waitlist_channel.mention if waitlist_channel else f'#waitlist-{region}'} . You are now an active tester.",
             color=discord.Color.green()
         ),
         ephemeral=True
@@ -914,13 +938,13 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
         await interaction.response.send_message(
             embed=discord.Embed(
                 title="👋 Left Active Testers",
-                description=f"You have been removed from active testers for {region.upper()} in {channel.mention}.",
+                description=f"You have been removed from active testers for {region.UPPER()} in {channel.mention}.",
                 color=discord.Color.blurple()
             ),
             ephemeral=True
         )
     else:
-        embed = discord.Embed(title="Not Active", description=f"You are not an active tester for {region.upper()}.", color=discord.Color.red())
+        embed = discord.Embed(title="Not Active", description=f"You are not an active tester for {region.UPPER()}.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="nextuser", description="Create a private channel for the next person in waitlist (Tester role required)")
@@ -946,7 +970,7 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         return
 
     if not gs["waitlists"][region]:
-        embed = discord.Embed(title="Empty Queue", description=f"No one is in the {region.upper()} waitlist.", color=discord.Color.red())
+        embed = discord.Embed(title="Empty Queue", description=f"No one is in the {region.UPPER()} waitlist.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -968,7 +992,7 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         else:
             del gs["active_testing_sessions"][next_user_id]
 
-    category_name = f"Eval {region.upper()}"
+    category_name = f"Eval {region.UPPER()}"
     category = discord.utils.get(interaction.guild.categories, name=category_name)
     if not category:
         embed = discord.Embed(title="Category Missing", description=f"Could not find category {category_name}.", color=discord.Color.red())
@@ -998,10 +1022,10 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
 
         roles_to_remove = []
         possible_role_names = [
-            f"Waitlist-{region.upper()}",
-            f"{region.upper()} Waitlist",
-            f"{region.upper()} Matchmaking",
-            f"waitlist-{region.upper()}",
+            f"Waitlist-{region.UPPER()}",
+            f"{region.UPPER()} Waitlist",
+            f"{region.UPPER()} Matchmaking",
+            f"waitlist-{region.UPPER()}",
             f"waitlist-{region.lower()}",
             f"{region.lower()} waitlist",
             f"{region.lower()} matchmaking"
@@ -1040,14 +1064,14 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         if user_data:
             info_embed = discord.Embed(
                 title="Welcome to your Evaluation Session",
-                description=f"Hello {next_user.mention}! You have been selected for testing in the {region.upper()} region.\n\nYour tester {interaction.user.mention} will guide you through the process.\n\n**IGN:** {user_data.get('ign', 'N/A')}\n**Preferred Server:** {user_data.get('server', 'N/A')}",
+                description=f"Hello {next_user.mention}! You have been selected for testing in the {region.UPPER()} region.\n\nYour tester {interaction.user.mention} will guide you through the process.\n\n**IGN:** {user_data.get('ign', 'N/A')}\n**Preferred Server:** {user_data.get('server', 'N/A')}",
                 color=0x00ff7f
             )
             await new_channel.send(embed=info_embed)
         else:
             info_embed = discord.Embed(
                 title="Welcome to your Evaluation Session",
-                description=f"Hello {next_user.mention}! You have been selected for testing in the {region.upper()} region.\n\nYour tester {interaction.user.mention} will guide you through the process.\n\n**IGN:** N/A\n**Preferred Server:** N/A",
+                description=f"Hello {next_user.mention}! You have been selected for testing in the {region.UPPER()} region.\n\nYour tester {interaction.user.mention} will guide you through the process.\n\n**IGN:** N/A\n**Preferred Server:** N/A",
                 color=0x00ff7f
             )
             await new_channel.send(embed=info_embed)
@@ -1093,7 +1117,7 @@ async def passeval(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    high_eval_category_name = f"High Eval {region.upper()}"
+    high_eval_category_name = f"High Eval {region.UPPER()}"
     high_eval_category = discord.utils.get(interaction.guild.categories, name=high_eval_category_name)
 
     if not high_eval_category:
@@ -1940,6 +1964,16 @@ class WaitlistModal(discord.ui.Modal):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
+        # Block restricted users from submitting the form at all
+        if has_restricted_role(interaction.user):
+            embed = discord.Embed(
+                title="⛔ Accès refusé",
+                description="Tu es actuellement restreint de la tierlist et ne peux pas entrer en file d’attente.",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
         gs = get_guild_state(interaction.guild.id)
 
         user_id = interaction.user.id
@@ -1995,7 +2029,7 @@ class WaitlistModal(discord.ui.Modal):
 
         if user_id in gs["user_info"]:
             existing_region = gs["user_info"][user_id]["region"].lower()
-            embed = discord.Embed(title="ℹ️ Form Already Submitted", description=f"You have already submitted a form for the {existing_region.upper()} region. Visit <#waitlist-{existing_region}> to join the queue.", color=discord.Color.red())
+            embed = discord.Embed(title="ℹ️ Form Already Submitted", description=f"You have already submitted a form for the {existing_region.UPPER()} region. Visit <#waitlist-{existing_region}> to join the queue.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
@@ -2024,7 +2058,7 @@ class WaitlistModal(discord.ui.Modal):
                 pass
 
         matchmaking_role = discord.utils.get(interaction.guild.roles, name=f"{region_input.upper()} Matchmaking")
-        if matchmaking_role and matchmaking_role < interaction.guild.me.top_role:
+        if not has_restricted_role(interaction.user) and matchmaking_role and matchmaking_role < interaction.guild.me.top_role:
             try:
                 await interaction.user.add_roles(matchmaking_role)
             except discord.Forbidden:
@@ -2211,13 +2245,13 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
 
         embed = discord.Embed(
             title="📋 Queue Join Log",
-            description=f"{user.mention} joined the {region.upper()} testing queue",
+            description=f"{user.mention} joined the {region.UPPER()} testing queue",
             color=0x00ff00,
             timestamp=datetime.datetime.now()
         )
 
         embed.add_field(name="User", value=f"{user.mention}\n`{user.name}` (ID: {user.id})", inline=True)
-        embed.add_field(name="Region", value=region.upper(), inline=True)
+        embed.add_field(name="Region", value=region.UPPER(), inline=True)
         embed.add_field(name="Position", value=f"#{position}", inline=True)
         embed.add_field(name="IGN", value=ign, inline=True)
         embed.add_field(name="Preferred Server", value=server, inline=True)
@@ -2231,7 +2265,7 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
         embed.set_footer(text="Queue Join Log", icon_url=guild.icon.url if guild.icon else None)
 
         await logs_channel.send(embed=embed)
-        print(f"DEBUG: Logged queue join for {user.name} ({cooldown_type}) in {region.upper()} region")
+        print(f"DEBUG: Logged queue join for {user.name} ({cooldown_type}) in {region.UPPER()} region")
 
     except Exception as e:
         print(f"DEBUG: Error logging queue join: {e}")
