@@ -1065,9 +1065,17 @@ async def passeval(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
+    # Check for multiple possible tester role names
+    tester_role = None
+    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester"]
+    
+    for role in interaction.user.roles:
+        if role.name in tester_role_names:
+            tester_role = role
+            break
+    
     if not tester_role:
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have the Tester role to use this command.", color=discord.Color.red())
+        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -1125,9 +1133,17 @@ async def close(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
+    # Check for multiple possible tester role names
+    tester_role = None
+    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester"]
+    
+    for role in interaction.user.roles:
+        if role.name in tester_role_names:
+            tester_role = role
+            break
+    
     if not tester_role:
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have the Tester role to use this command.", color=discord.Color.red())
+        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -1215,9 +1231,17 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
+    # Check for multiple possible tester role names
+    tester_role = None
+    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester"]
+    
+    for role in interaction.user.roles:
+        if role.name in tester_role_names:
+            tester_role = role
+            break
+    
     if not tester_role:
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have the Tester role to use this command.", color=discord.Color.red())
+        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
