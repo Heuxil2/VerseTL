@@ -457,7 +457,6 @@ async def on_ready():
                     "• Region should be the region of the server you wish to test on\n"
                     "• Username should be the name of the account you will be testing on\n\n"
                     "**🛑 Failure to provide authentic information will result in a denied test.**\n\n"
-                    "**⚠️ Users with 'Tierlist Restricted' role cannot access testing.**\n\n"
                 ),
                 color=discord.Color.red())
             view = discord.ui.View()
