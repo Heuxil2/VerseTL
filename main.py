@@ -2445,7 +2445,32 @@ async def update_leaderboard(guild: discord.Guild):
     except Exception as e:
         print(f"DEBUG: Error updating leaderboard in guild {guild_id}: {e}")
 
-async def notify_first_in_queue(guild: discord.Guild, region: str, tester: discord.Member):
+@bot.tree.command(name="reset_leaderboard", description="Reset the tester leaderboard (Admin only)")
+@app_commands.default_permissions(administrator=True)
+async def reset_leaderboard(interaction: discord.Interaction):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
+    guild_id = interaction.guild.id
+    initialize_guild_data(guild_id)
+
+    # Réinitialiser les statistiques des testeurs pour ce serveur
+    tester_stats[guild_id] = {}
+    save_tester_stats(guild_id)
+
+    # Mettre à jour le leaderboard pour afficher les données vides
+    await update_leaderboard(interaction.guild)
+
+    await interaction.response.send_message(
+        embed=discord.Embed(
+            title="✅ Leaderboard Reset",
+            description="The tester leaderboard has been reset and all statistics have been cleared.",
+            color=discord.Color.green()
+        ),
+        ephemeral=True
+    )
+
+async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str, position: int):
     """Notify the first person in queue via DM that a tester is now available"""
     guild_id = guild.id
     if not is_guild_authorized(guild_id):
