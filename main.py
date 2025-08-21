@@ -4,6 +4,7 @@ from discord import app_commands
 import asyncio
 import os
 import json
+import re
 import datetime
 from dotenv import load_dotenv
 from keep_alive import keep_alive
@@ -126,13 +127,17 @@ def apply_cooldown(user_id: int, member: discord.Member):
     return cooldown_days
 
 def has_tester_role(member: discord.Member) -> bool:
-    """Check if a member has any tester role (case-insensitive)"""
-    tester_roles = {"tester", "verified tester", "staff tester"}
+    """Check if a member has any tester role (robust, case-insensitive, tolerant to separators)"""
     for role in member.roles:
         try:
-            if (role.name or "").lower() in tester_roles:
+            name = (role.name or "").lower()
+            # normalize separators and symbols to spaces, collapse spaces
+            name = re.sub(r"[^a-z0-9]+", " ", name)
+            name = " ".join(name.split())
+            # accept any role name that clearly contains 'tester'
+            if "tester" in name:
                 return True
-        except AttributeError:
+        except Exception:
             continue
     return False
 
@@ -838,6 +843,10 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
     print(f"DEBUG: /startqueue called by {interaction.user.name} for channel {channel.name}")
 
     if not has_tester_role(interaction.user):
+        try:
+            print(f"DEBUG: Tester check failed for {interaction.user} with roles: {[r.name for r in interaction.user.roles]}")
+        except Exception:
+            pass
         embed = discord.Embed(title="Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -885,9 +894,8 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
     if channel is None:
         channel = interaction.channel
 
-    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
-    if not tester_role:
-        embed = discord.Embed(title="Tester Role Required", description="You must have the Tester role to use this command.", color=discord.Color.red())
+    if not has_tester_role(interaction.user):
+        embed = discord.Embed(title="Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -1059,9 +1067,8 @@ async def passeval(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
-    if not tester_role:
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have the Tester role to use this command.", color=discord.Color.red())
+    if not has_tester_role(interaction.user):
+        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
