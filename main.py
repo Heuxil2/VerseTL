@@ -56,32 +56,28 @@ def is_guild_authorized(guild_id):
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Store server backups and logs - NOW PER GUILD
-server_backups = {}  # {guild_id: backup_data}
-message_logs = {}    # {guild_id: [logs]}
+# Store server backups and logs
+server_backups = {}
+message_logs = {}
 
-# Waitlist system variables - NOW PER GUILD
-# Structure: {guild_id: {"na": [], "eu": [], "as": [], "au": []}}
-waitlists = {}
+# Waitlist system variables
+waitlists = {"na": [], "eu": [], "as": [], "au": []}
 MAX_WAITLIST = 20
+waitlist_message_ids = {}  # Store message IDs for each region
+waitlist_messages = {}  # Store actual message objects for each region
+opened_queues = set()
+active_testers = {"na": [], "eu": [], "as": [], "au": []}  # Track active testers per region
+user_info = {}  # Store user form information {user_id: {"ign": str, "server": str, "region": str}}
+last_test_session = datetime.datetime.now()  # Initialize with current time instead of None
+last_region_activity = {"na": None, "eu": None, "as": None, "au": None}  # Track last activity per region
+tester_stats = {}  # Track test counts for each tester {user_id: test_count}
+STATS_FILE = "tester_stats.json"  # File to persist tester statistics
+user_test_cooldowns = {}  # Store cooldown timestamps for users {user_id: datetime}
+COOLDOWNS_FILE = "user_cooldowns.json"  # Persist cooldowns
+LAST_ACTIVITY_FILE = "last_region_activity.json"  # Persist last activities
 
-# Store per guild data
-waitlist_message_ids = {}      # {guild_id: {region: message_id}}
-waitlist_messages = {}         # {guild_id: {region: message_object}}
-opened_queues = {}             # {guild_id: set(regions)}
-active_testers = {}            # {guild_id: {"na": [], "eu": [], "as": [], "au": []}}
-user_info = {}                 # {guild_id: {user_id: {"ign": str, "server": str, "region": str}}}
-active_testing_sessions = {}   # {guild_id: {user_id: channel_id}}
-last_region_activity = {}      # {guild_id: {"na": datetime, "eu": datetime, "as": datetime, "au": datetime}}
-
-# Tester stats - NOW PER GUILD
-tester_stats = {}              # {guild_id: {user_id: test_count}}
-user_test_cooldowns = {}       # {guild_id: {user_id: datetime}}
-
-# File patterns for per-guild storage
-STATS_FILE_PATTERN = "tester_stats_{guild_id}.json"
-COOLDOWNS_FILE_PATTERN = "user_cooldowns_{guild_id}.json"
-LAST_ACTIVITY_FILE_PATTERN = "last_region_activity_{guild_id}.json"
+# Track active testing sessions to prevent duplicates
+active_testing_sessions = {}  # {user_id: channel_id}
 
 # Cooldown durations
 REGULAR_COOLDOWN_DAYS = 4
@@ -105,58 +101,10 @@ TIER_COLUMNS = {
 # High tier definitions (HT3 and above, including HT2, LT2, HT1, LT1)
 HIGH_TIERS = ["HT1", "LT1", "HT2", "LT2", "HT3"]
 
-def initialize_guild_data(guild_id):
-    """Initialize data structures for a new guild"""
-    if guild_id not in waitlists:
-        waitlists[guild_id] = {"na": [], "eu": [], "as": [], "au": []}
-    if guild_id not in waitlist_message_ids:
-        waitlist_message_ids[guild_id] = {}
-    if guild_id not in waitlist_messages:
-        waitlist_messages[guild_id] = {}
-    if guild_id not in opened_queues:
-        opened_queues[guild_id] = set()
-    if guild_id not in active_testers:
-        active_testers[guild_id] = {"na": [], "eu": [], "as": [], "au": []}
-    if guild_id not in user_info:
-        user_info[guild_id] = {}
-    if guild_id not in active_testing_sessions:
-        active_testing_sessions[guild_id] = {}
-    if guild_id not in tester_stats:
-        tester_stats[guild_id] = {}
-    if guild_id not in user_test_cooldowns:
-        user_test_cooldowns[guild_id] = {}
-    if guild_id not in last_region_activity:
-        last_region_activity[guild_id] = {"na": None, "eu": None, "as": None, "au": None}
-    if guild_id not in message_logs:
-        message_logs[guild_id] = []
-
 def has_booster_role(member: discord.Member) -> bool:
     """Check if a member has the Booster role"""
     booster_role = discord.utils.get(member.roles, name="Booster")
     return booster_role is not None
-
-def has_tierlist_restricted_role(member: discord.Member) -> bool:
-    """Check if a member has the Tierlist Restricted role"""
-    restricted_role = discord.utils.get(member.roles, name="Tierlist Restricted")
-    return restricted_role is not None
-
-def has_tester_role(member: discord.Member) -> bool:
-    """Check if a member has any valid tester role"""
-    tester_role_names = [
-        "Tester", 
-        "Verified Tester", 
-        "Staff Tester", 
-        "tester", 
-        "verified tester", 
-        "staff tester",
-        "Admin",  # Au cas où les admins peuvent aussi tester
-        "Moderator"  # Au cas où les modérateurs peuvent aussi tester
-    ]
-    
-    for role in member.roles:
-        if role.name in tester_role_names:
-            return True
-    return False
 
 def get_cooldown_duration(member: discord.Member) -> int:
     """Get the appropriate cooldown duration based on user roles"""
@@ -165,71 +113,64 @@ def get_cooldown_duration(member: discord.Member) -> int:
     else:
         return REGULAR_COOLDOWN_DAYS
 
-def apply_cooldown(guild_id: int, user_id: int, member: discord.Member):
+def apply_cooldown(user_id: int, member: discord.Member):
     """Apply cooldown with appropriate duration based on user roles"""
-    if guild_id not in user_test_cooldowns:
-        user_test_cooldowns[guild_id] = {}
-    
     cooldown_days = get_cooldown_duration(member)
     cooldown_end = datetime.datetime.now() + datetime.timedelta(days=cooldown_days)
-    user_test_cooldowns[guild_id][user_id] = cooldown_end
-    save_user_cooldowns(guild_id)
+    user_test_cooldowns[user_id] = cooldown_end
+    save_user_cooldowns()
 
     role_type = "Booster" if has_booster_role(member) else "Regular"
-    print(f"DEBUG: Applied {cooldown_days}-day cooldown for {role_type} user {member.name} (ID: {user_id}) in guild {guild_id} until {cooldown_end}")
+    print(f"DEBUG: Applied {cooldown_days}-day cooldown for {role_type} user {member.name} (ID: {user_id}) until {cooldown_end}")
     return cooldown_days
 
-def save_tester_stats(guild_id: int):
-    """Save tester statistics to JSON file for specific guild"""
+def save_tester_stats():
+    """Save tester statistics to JSON file"""
     try:
-        filename = STATS_FILE_PATTERN.format(guild_id=guild_id)
-        guild_stats = tester_stats.get(guild_id, {})
-        with open(filename, 'w') as f:
-            json.dump(guild_stats, f, indent=2)
-        print(f"DEBUG: Saved tester stats for guild {guild_id} to {filename}")
+        with open(STATS_FILE, 'w') as f:
+            json.dump(tester_stats, f, indent=2)
+        print(f"DEBUG: Saved tester stats to {STATS_FILE}")
     except Exception as e:
-        print(f"DEBUG: Error saving tester stats for guild {guild_id}: {e}")
+        print(f"DEBUG: Error saving tester stats: {e}")
 
-def load_tester_stats(guild_id: int):
-    """Load tester statistics from JSON file for specific guild"""
+def load_tester_stats():
+    """Load tester statistics from JSON file"""
+    global tester_stats
     try:
-        filename = STATS_FILE_PATTERN.format(guild_id=guild_id)
-        if os.path.exists(filename):
-            with open(filename, 'r') as f:
+        if os.path.exists(STATS_FILE):
+            with open(STATS_FILE, 'r') as f:
                 loaded_stats = json.load(f)
-                tester_stats[guild_id] = {int(user_id): count for user_id, count in loaded_stats.items()}
-            print(f"DEBUG: Loaded {len(tester_stats[guild_id])} tester stats for guild {guild_id} from {filename}")
+                tester_stats = {int(user_id): count for user_id, count in loaded_stats.items()}
+            print(f"DEBUG: Loaded {len(tester_stats)} tester stats from {STATS_FILE}")
         else:
-            print(f"DEBUG: No existing stats file found for guild {guild_id}, starting fresh")
-            tester_stats[guild_id] = {}
+            print(f"DEBUG: No existing stats file found, starting fresh")
+            tester_stats = {}
     except Exception as e:
-        print(f"DEBUG: Error loading tester stats for guild {guild_id}: {e}")
-        tester_stats[guild_id] = {}
+        print(f"DEBUG: Error loading tester stats: {e}")
+        tester_stats = {}
 
-def save_user_cooldowns(guild_id: int):
-    """Save user cooldowns to JSON file for specific guild"""
+def save_user_cooldowns():
+    """Save user cooldowns to JSON file"""
     try:
-        filename = COOLDOWNS_FILE_PATTERN.format(guild_id=guild_id)
         cooldowns_data = {}
-        guild_cooldowns = user_test_cooldowns.get(guild_id, {})
-        for user_id, cooldown_time in guild_cooldowns.items():
+        for user_id, cooldown_time in user_test_cooldowns.items():
             cooldowns_data[str(user_id)] = cooldown_time.isoformat()
 
-        with open(filename, 'w') as f:
+        with open(COOLDOWNS_FILE, 'w') as f:
             json.dump(cooldowns_data, f, indent=2)
-        print(f"DEBUG: Saved {len(cooldowns_data)} user cooldowns for guild {guild_id} to {filename}")
+        print(f"DEBUG: Saved {len(cooldowns_data)} user cooldowns to {COOLDOWNS_FILE}")
     except Exception as e:
-        print(f"DEBUG: Error saving user cooldowns for guild {guild_id}: {e}")
+        print(f"DEBUG: Error saving user cooldowns: {e}")
 
-def load_user_cooldowns(guild_id: int):
-    """Load user cooldowns from JSON file for specific guild"""
+def load_user_cooldowns():
+    """Load user cooldowns from JSON file"""
+    global user_test_cooldowns
     try:
-        filename = COOLDOWNS_FILE_PATTERN.format(guild_id=guild_id)
-        if os.path.exists(filename):
-            with open(filename, 'r') as f:
+        if os.path.exists(COOLDOWNS_FILE):
+            with open(COOLDOWNS_FILE, 'r') as f:
                 loaded_cooldowns = json.load(f)
 
-            user_test_cooldowns[guild_id] = {}
+            user_test_cooldowns = {}
             current_time = datetime.datetime.now()
 
             for user_id_str, cooldown_str in loaded_cooldowns.items():
@@ -238,71 +179,66 @@ def load_user_cooldowns(guild_id: int):
                     cooldown_time = datetime.datetime.fromisoformat(cooldown_str)
 
                     if cooldown_time > current_time:
-                        user_test_cooldowns[guild_id][user_id] = cooldown_time
+                        user_test_cooldowns[user_id] = cooldown_time
                         time_remaining = cooldown_time - current_time
                         days = time_remaining.days
                         hours = time_remaining.seconds // 3600
-                        print(f"DEBUG: Loaded active cooldown for user {user_id} in guild {guild_id}: {days}d {hours}h remaining")
+                        print(f"DEBUG: Loaded active cooldown for user {user_id}: {days}d {hours}h remaining")
                     else:
-                        print(f"DEBUG: Skipped expired cooldown for user {user_id} in guild {guild_id}")
+                        print(f"DEBUG: Skipped expired cooldown for user {user_id}")
 
                 except (ValueError, TypeError) as e:
-                    print(f"DEBUG: Error parsing cooldown for user {user_id_str} in guild {guild_id}: {e}")
+                    print(f"DEBUG: Error parsing cooldown for user {user_id_str}: {e}")
 
-            print(f"DEBUG: Loaded {len(user_test_cooldowns[guild_id])} active cooldowns for guild {guild_id} from {filename}")
+            print(f"DEBUG: Loaded {len(user_test_cooldowns)} active cooldowns from {COOLDOWNS_FILE}")
         else:
-            print(f"DEBUG: No existing cooldowns file found for guild {guild_id}, starting fresh")
-            user_test_cooldowns[guild_id] = {}
+            print(f"DEBUG: No existing cooldowns file found, starting fresh")
+            user_test_cooldowns = {}
     except Exception as e:
-        print(f"DEBUG: Error loading user cooldowns for guild {guild_id}: {e}")
-        user_test_cooldowns[guild_id] = {}
+        print(f"DEBUG: Error loading user cooldowns: {e}")
+        user_test_cooldowns = {}
 
-def save_last_region_activity(guild_id: int):
-    """Save last region activity to JSON file for specific guild"""
+def save_last_region_activity():
+    """Save last region activity to JSON file"""
     try:
-        filename = LAST_ACTIVITY_FILE_PATTERN.format(guild_id=guild_id)
         activity_data = {}
-        guild_activity = last_region_activity.get(guild_id, {})
-        for region, last_time in guild_activity.items():
+        for region, last_time in last_region_activity.items():
             if last_time is not None:
                 activity_data[region] = last_time.isoformat()
             else:
                 activity_data[region] = None
 
-        with open(filename, 'w') as f:
+        with open(LAST_ACTIVITY_FILE, 'w') as f:
             json.dump(activity_data, f, indent=2)
-        print(f"DEBUG: Saved last region activities for guild {guild_id} to {filename}")
+        print(f"DEBUG: Saved last region activities to {LAST_ACTIVITY_FILE}")
     except Exception as e:
-        print(f"DEBUG: Error saving last region activities for guild {guild_id}: {e}")
+        print(f"DEBUG: Error saving last region activities: {e}")
 
-def load_last_region_activity(guild_id: int):
-    """Load last region activity from JSON file for specific guild"""
+def load_last_region_activity():
+    """Load last region activity from JSON file"""
+    global last_region_activity
     try:
-        filename = LAST_ACTIVITY_FILE_PATTERN.format(guild_id=guild_id)
-        if os.path.exists(filename):
-            with open(filename, 'r') as f:
+        if os.path.exists(LAST_ACTIVITY_FILE):
+            with open(LAST_ACTIVITY_FILE, 'r') as f:
                 loaded_activities = json.load(f)
 
-            last_region_activity[guild_id] = {"na": None, "eu": None, "as": None, "au": None}
-            for region in last_region_activity[guild_id].keys():
+            for region in last_region_activity.keys():
                 if region in loaded_activities and loaded_activities[region] is not None:
                     try:
-                        last_region_activity[guild_id][region] = datetime.datetime.fromisoformat(loaded_activities[region])
-                        time_ago = datetime.datetime.now() - last_region_activity[guild_id][region]
-                        print(f"DEBUG: Loaded last activity for {region.upper()} in guild {guild_id}: {time_ago.days} days ago")
+                        last_region_activity[region] = datetime.datetime.fromisoformat(loaded_activities[region])
+                        time_ago = datetime.datetime.now() - last_region_activity[region]
+                        print(f"DEBUG: Loaded last activity for {region.upper()}: {time_ago.days} days ago")
                     except (ValueError, TypeError) as e:
-                        print(f"DEBUG: Error parsing last activity for {region} in guild {guild_id}: {e}")
-                        last_region_activity[guild_id][region] = None
+                        print(f"DEBUG: Error parsing last activity for {region}: {e}")
+                        last_region_activity[region] = None
                 else:
-                    last_region_activity[guild_id][region] = None
+                    last_region_activity[region] = None
 
-            print(f"DEBUG: Loaded last region activities for guild {guild_id} from {filename}")
+            print(f"DEBUG: Loaded last region activities from {LAST_ACTIVITY_FILE}")
         else:
-            print(f"DEBUG: No existing last activity file found for guild {guild_id}, starting fresh")
-            last_region_activity[guild_id] = {"na": None, "eu": None, "as": None, "au": None}
+            print(f"DEBUG: No existing last activity file found, starting fresh")
     except Exception as e:
-        print(f"DEBUG: Error loading last region activities for guild {guild_id}: {e}")
-        last_region_activity[guild_id] = {"na": None, "eu": None, "as": None, "au": None}
+        print(f"DEBUG: Error loading last region activities: {e}")
 
 def get_sheets_service():
     """Get Google Sheets service using service account credentials"""
@@ -409,15 +345,24 @@ async def on_ready():
 
     load_authorized_guilds()
 
-    # Initialize data for all guilds
     for guild in bot.guilds:
-        guild_id = guild.id
-        initialize_guild_data(guild_id)
-        load_tester_stats(guild_id)
-        load_user_cooldowns(guild_id)
-        load_last_region_activity(guild_id)
+        if guild.id not in message_logs:
+            message_logs[guild.id] = []
 
-    print("DEBUG: Initialized per-guild data structures on startup")
+    load_tester_stats()
+    load_user_cooldowns()
+    load_last_region_activity()
+
+    global opened_queues, active_testers, waitlists, waitlist_message_ids, waitlist_messages, active_testing_sessions
+    opened_queues.clear()
+    for region in active_testers:
+        active_testers[region].clear()
+    for region in waitlists:
+        waitlists[region].clear()
+    waitlist_message_ids.clear()
+    waitlist_messages.clear()
+    active_testing_sessions.clear()
+    print("DEBUG: Cleared all opened queues, active testers, waitlists, message references, and active testing sessions on startup")
 
     try:
         synced = await bot.tree.sync()
@@ -445,7 +390,6 @@ async def on_ready():
             print(f"DEBUG: Skipping setup for unauthorized guild {guild.id}")
             continue
 
-        guild_id = guild.id
         request_channel = discord.utils.get(guild.text_channels, name="📨┃request-test")
         if request_channel:
             embed = discord.Embed(
@@ -467,22 +411,23 @@ async def on_ready():
 
             try:
                 await request_channel.purge(limit=100)
-                print(f"DEBUG: Purged all messages in request-test channel for guild {guild_id}")
+                print(f"DEBUG: Purged all messages in request-test channel")
             except Exception as e:
-                print(f"DEBUG: Could not purge request-test channel for guild {guild_id}: {e}")
+                print(f"DEBUG: Could not purge request-test channel: {e}")
 
             await request_channel.send(embed=embed, view=view)
-            print(f"DEBUG: Created single request button in request-test channel for guild {guild_id}")
+            print(f"DEBUG: Created single request button in request-test channel with Booster cooldown info")
 
-        for region in ["na", "eu", "as", "au"]:
+        for region in waitlists:
             channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
             if channel:
                 try:
                     await channel.purge(limit=100)
-                    print(f"DEBUG: Purged messages in waitlist-{region} for guild {guild_id}")
+                    print(f"DEBUG: Purged messages in waitlist-{region}")
                 except Exception as e:
-                    print(f"DEBUG: Could not purge waitlist-{region} for guild {guild_id}: {e}")
+                    print(f"DEBUG: Could not purge waitlist-{region}: {e}")
 
+                opened_queues.discard(region)
                 await create_initial_waitlist_message(guild, region)
 
         await update_leaderboard(guild)
@@ -501,8 +446,7 @@ async def on_ready():
 
 @bot.event
 async def on_guild_join(guild):
-    guild_id = guild.id
-    initialize_guild_data(guild_id)
+    message_logs[guild.id] = []
     embed = discord.Embed(
         title="Thanks for adding me!",
         description=(
@@ -544,17 +488,13 @@ async def on_member_join(member):
         return
     if not is_guild_authorized(member.guild.id):
         return
-    
-    guild_id = member.guild.id
-    initialize_guild_data(guild_id)
-    
     role = discord.utils.get(member.guild.roles, name="Member")
     if role:
         try:
             await member.add_roles(role)
-            print(f"Assigned 'Member' role to {member} in guild {guild_id}")
+            print(f"Assigned 'Member' role to {member}")
         except Exception as e:
-            print(f"Failed to assign role to {member} in guild {guild_id}: {e}")
+            print(f"Failed to assign role to {member}: {e}")
     else:
         print(f"'Member' role not found in {member.guild.name}")
     await update_user_count_channel(member.guild)
@@ -565,14 +505,14 @@ async def on_member_join(member):
         "user_id": member.id,
         "timestamp": datetime.datetime.now().isoformat()
     }
-    message_logs[guild_id].append(log_entry)
+    if member.guild.id not in message_logs:
+        message_logs[member.guild.id] = []
+    message_logs[member.guild.id].append(log_entry)
 
 @bot.event
 async def on_member_remove(member):
     if not is_guild_authorized(member.guild.id):
         return
-    
-    guild_id = member.guild.id
     await update_user_count_channel(member.guild)
 
     log_entry = {
@@ -581,8 +521,9 @@ async def on_member_remove(member):
         "user_id": member.id,
         "timestamp": datetime.datetime.now().isoformat()
     }
-    if guild_id in message_logs:
-        message_logs[guild_id].append(log_entry)
+    if member.guild.id not in message_logs:
+        message_logs[member.guild.id] = []
+    message_logs[member.guild.id].append(log_entry)
 
 @bot.event
 async def on_message(message):
@@ -591,7 +532,6 @@ async def on_message(message):
     if not is_guild_authorized(getattr(message.guild, "id", None)):
         return
 
-    guild_id = message.guild.id
     if message.channel.name == "💬┃general":
         content_lower = message.content.lower()
 
@@ -641,8 +581,9 @@ async def on_message(message):
                     "content": message.content[:100] + "..." if len(message.content) > 100 else message.content,
                     "timestamp": datetime.datetime.now().isoformat()
                 }
-                if guild_id in message_logs:
-                    message_logs[guild_id].append(log_entry)
+                if message.guild.id not in message_logs:
+                    message_logs[message.guild.id] = []
+                message_logs[message.guild.id].append(log_entry)
 
             except discord.NotFound:
                 pass
@@ -658,7 +599,6 @@ async def on_message_delete(message):
     if not is_guild_authorized(getattr(message.guild, "id", None)):
         return
 
-    guild_id = message.guild.id
     log_entry = {
         "type": "message_delete",
         "user": str(message.author),
@@ -667,26 +607,25 @@ async def on_message_delete(message):
         "content": message.content[:100] + "..." if len(message.content) > 100 else message.content,
         "timestamp": datetime.datetime.now().isoformat()
     }
-    if guild_id in message_logs:
-        message_logs[guild_id].append(log_entry)
+    if message.guild.id not in message_logs:
+        message_logs[message.guild.id] = []
+    message_logs[message.guild.id].append(log_entry)
 
 @bot.event
 async def on_guild_channel_delete(channel):
     """Clean up tracking when eval channels are deleted"""
     if channel.name.startswith("eval-"):
-        guild_id = channel.guild.id
         channel_id = channel.id
         user_to_remove = None
 
-        if guild_id in active_testing_sessions:
-            for user_id, active_channel_id in active_testing_sessions[guild_id].items():
-                if active_channel_id == channel_id:
-                    user_to_remove = user_id
-                    break
+        for user_id, active_channel_id in active_testing_sessions.items():
+            if active_channel_id == channel_id:
+                user_to_remove = user_id
+                break
 
-            if user_to_remove:
-                del active_testing_sessions[guild_id][user_to_remove]
-                print(f"DEBUG: Cleaned up active testing session for user {user_to_remove} in guild {guild_id} (channel deleted)")
+        if user_to_remove:
+            del active_testing_sessions[user_to_remove]
+            print(f"DEBUG: Cleaned up active testing session for user {user_to_remove} (channel deleted)")
 
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
@@ -703,80 +642,70 @@ async def on_interaction(interaction: discord.Interaction):
     print(f"DEBUG: Interaction received - Type: {interaction.type}, Data: {getattr(interaction, 'data', 'No data')}")
 
     if interaction.type == discord.InteractionType.component:
-        custom_id = interaction.data["custom_id"]
+        custom_id = interaction.data.get("custom_id")
 
         if custom_id == "open_form":
-            guild_id = interaction.guild.id
-            initialize_guild_data(guild_id)
-            
-            # Check for Tierlist Restricted role
-            if has_tierlist_restricted_role(interaction.user):
-                embed = discord.Embed(
-                    title="⛔ Access Restricted", 
-                    description="Users with the 'Tierlist Restricted' role cannot access the testing waitlist.", 
-                    color=discord.Color.red()
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
-            
-            if interaction.channel.name == "📨┃request-test":
+            # Allow in any channel that resembles request-test
+            if "request-test" in interaction.channel.name.lower():
                 modal = WaitlistModal()
                 await interaction.response.send_modal(modal)
                 return
 
-            for region in ["na", "eu", "as", "au"]:
-                if interaction.channel.name.lower() == f"waitlist-{region}":
-                    user_id = interaction.user.id
-                    if user_id not in user_info[guild_id]:
-                        embed = discord.Embed(title="❌ Form Required", description="You must submit the form in <#📨┃request-test> before joining the queue.", color=discord.Color.red())
-                        await interaction.response.send_message(embed=embed, ephemeral=True)
-                        return
-
-                    user_region = user_info[guild_id][user_id]["region"].lower()
-                    if user_region != region:
-                        embed = discord.Embed(title="❌ Wrong Region", description=f"Your form was submitted for {user_region.upper()} region, but you're trying to join the {region.upper()} queue.", color=discord.Color.red())
-                        await interaction.response.send_message(embed=embed, ephemeral=True)
-                        return
-
-                    if user_id in active_testing_sessions[guild_id]:
-                        existing_channel_id = active_testing_sessions[guild_id][user_id]
-                        existing_channel = interaction.guild.get_channel(existing_channel_id)
-
-                        if existing_channel:
-                            embed = discord.Embed(title="⚠️ Active Session Exists", description=f"You already have an active testing session in {existing_channel.mention}. Please complete that test first.", color=discord.Color.red())
-                            await interaction.response.send_message(embed=embed, ephemeral=True)
-                            return
-                        else:
-                            del active_testing_sessions[guild_id][user_id]
-
-                    if interaction.user.id in waitlists[guild_id][region]:
-                        embed = discord.Embed(title="ℹ️ Already in Queue", description="You're already in the queue.", color=discord.Color.red())
-                        await interaction.response.send_message(embed=embed, ephemeral=True)
-                        return
-
-                    if len(waitlists[guild_id][region]) >= MAX_WAITLIST:
-                        embed = discord.Embed(title="⛔ Queue Full", description="Queue is full.", color=discord.Color.red())
-                        await interaction.response.send_message(embed=embed, ephemeral=True)
-                        return
-
-                    waitlists[guild_id][region].append(interaction.user.id)
-
-                    role = discord.utils.get(interaction.guild.roles,
-                                             name=f"Waitlist-{region.upper()}")
-                    if role and role not in interaction.user.roles and role < interaction.guild.me.top_role:
-                        try:
-                            await interaction.user.add_roles(role)
-                        except discord.Forbidden:
-                            pass
-
-                    await interaction.response.send_message(
-                        f"✅ Successfully joined the {region.upper()} queue! You are position #{len(waitlists[guild_id][region])} in line.",
-                        ephemeral=True)
-
-                    await log_queue_join(interaction.guild, interaction.user, region, len(waitlists[guild_id][region]))
-
-                    await update_waitlist_message(interaction.guild, region)
+            # If in a waitlist channel, treat the button as Join Queue using the channel context
+            region = get_region_from_channel(interaction.channel.name)
+            if region:
+                user_id = interaction.user.id
+                if user_id not in user_info:
+                    embed = discord.Embed(title="❌ Form Required", description="You must submit the form in <#📨┃request-test> before joining the queue.", color=discord.Color.red())
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
+
+                user_region = user_info[user_id]["region"].lower()
+                if user_region != region:
+                    embed = discord.Embed(title="❌ Wrong Region", description=f"Your form was submitted for {user_region.upper()} region, but you're trying to join the {region.upper()} queue.", color=discord.Color.red())
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+
+                if user_id in active_testing_sessions:
+                    existing_channel_id = active_testing_sessions[user_id]
+                    existing_channel = interaction.guild.get_channel(existing_channel_id)
+
+                    if existing_channel:
+                        embed = discord.Embed(title="⚠️ Active Session Exists", description=f"You already have an active testing session in {existing_channel.mention}. Please complete that test first.", color=discord.Color.red())
+                        await interaction.response.send_message(embed=embed, ephemeral=True)
+                        return
+                    else:
+                        del active_testing_sessions[user_id]
+
+                if interaction.user.id in waitlists[region]:
+                    embed = discord.Embed(title="ℹ️ Already in Queue", description="You're already in the queue.", color=discord.Color.red())
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+
+                if len(waitlists[region]) >= MAX_WAITLIST:
+                    embed = discord.Embed(title="⛔ Queue Full", description="Queue is full.", color=discord.Color.red())
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+
+                waitlists[region].append(interaction.user.id)
+
+                role = discord.utils.get(interaction.guild.roles,
+                                         name=f"Waitlist-{region.upper()}")
+                if role and role not in interaction.user.roles and role < interaction.guild.me.top_role:
+                    try:
+                        await interaction.user.add_roles(role)
+                    except discord.Forbidden:
+                        pass
+
+                await interaction.response.send_message(
+                    f"✅ Successfully joined the {region.upper()} queue! You are position #{len(waitlists[region])} in line.",
+                    ephemeral=True)
+
+                await log_queue_join(interaction.guild, interaction.user, region, len(waitlists[region]))
+
+                await update_waitlist_message(interaction.guild, region)
+                return
+
             embed = discord.Embed(title="❌ Invalid Region", description="Invalid waitlist region.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -801,8 +730,6 @@ async def authorize(interaction: discord.Interaction):
 
     authorized_guilds.add(interaction.guild.id)
     save_authorized_guilds()
-    initialize_guild_data(interaction.guild.id)
-    
     await interaction.response.send_message(
             embed=discord.Embed(
                 title="Server Authorized",
@@ -830,11 +757,9 @@ async def leave(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    guild_id = interaction.guild.id
-    initialize_guild_data(guild_id)
     left_regions = []
 
-    for region, queue in waitlists[guild_id].items():
+    for region, queue in waitlists.items():
         if interaction.user.id in queue:
             queue.remove(interaction.user.id)
             left_regions.append(region)
@@ -865,20 +790,12 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
     if channel is None:
         channel = interaction.channel
 
-    guild_id = interaction.guild.id
-    initialize_guild_data(guild_id)
-    
-    print(f"DEBUG: /startqueue called by {interaction.user.name} for channel {channel.name} in guild {guild_id}")
+    print(f"DEBUG: /startqueue called by {interaction.user.name} for channel {channel.name}")
 
-    # Use the centralized function to check for tester role
-    if not has_tester_role(interaction.user):
-        embed = discord.Embed(
-            title="❌ Tester Role Required", 
-            description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", 
-            color=discord.Color.red()
-        )
+    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
+    if not tester_role:
+        embed = discord.Embed(title="Tester Role Required", description="You must have the Tester role to use this command.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
-        print(f"DEBUG: User {interaction.user.name} does not have tester role. Roles: {[role.name for role in interaction.user.roles]}")
         return
 
     print(f"DEBUG: User has Tester role, checking channel name: {channel.name}")
@@ -886,42 +803,33 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
     print(f"DEBUG: Detected region: {region}")
 
     if not region:
-        embed = discord.Embed(
-            title="❌ Invalid Channel", 
-            description=f"This is not a valid waitlist channel. Channel name: {channel.name}\n\nValid channels are: waitlist-na, waitlist-eu, waitlist-as, waitlist-au", 
-            color=discord.Color.red()
-        )
+        embed = discord.Embed(title="Invalid Channel", description=f"This is not a valid waitlist channel. Channel name: {channel.name}", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    opened_queues[guild_id].add(region)
+    opened_queues.add(region)
 
-    last_region_activity[guild_id][region] = datetime.datetime.now()
-    save_last_region_activity(guild_id)
-    print(f"DEBUG: Updated and saved last activity for {region.upper()} in guild {guild_id}")
+    last_region_activity[region] = datetime.datetime.now()
+    save_last_region_activity()
+    print(f"DEBUG: Updated and saved last activity for {region.upper()}")
 
-    if interaction.user.id not in active_testers[guild_id][region]:
-        active_testers[guild_id][region].append(interaction.user.id)
+    if interaction.user.id not in active_testers[region]:
+        active_testers[region].append(interaction.user.id)
 
-    print(f"DEBUG: Added {region} to opened_queues for guild {guild_id}: {opened_queues[guild_id]}")
-    print(f"DEBUG: Active testers for {region} in guild {guild_id}: {active_testers[guild_id][region]}")
+    print(f"DEBUG: Added {region} to opened_queues: {opened_queues}")
+    print(f"DEBUG: Active testers for {region}: {active_testers[region]}")
 
     waitlist_channel = discord.utils.get(interaction.guild.text_channels, name=f"waitlist-{region}")
 
     await interaction.response.send_message(
             embed=discord.Embed(
-                title="✅ Queue Started",
-                description=f"{region.upper()} waitlist is now active in {waitlist_channel.mention if waitlist_channel else f'#waitlist-{region}'}. You are now an active tester.",
+                title="Queue Started",
+                description=f"{region.upper()} waitlist is now active in {waitlist_channel.mention if waitlist_channel else f'#waitlist-{region}'} . You are now an active tester.",
                 color=discord.Color.green()
             ),
         ephemeral=True
     )
 
-    print(f"DEBUG: Successfully started queue for {region} in guild {guild_id}")
-
-    # Notify the first user in queue that a tester is now available
-    await notify_first_in_queue(interaction.guild, region, interaction.user)
-    
     await update_waitlist_message(interaction.guild, region)
 
 @bot.tree.command(name="stopqueue", description="Remove yourself from active testers (Tester role required)")
@@ -933,42 +841,26 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
     if channel is None:
         channel = interaction.channel
 
-    guild_id = interaction.guild.id
-    initialize_guild_data(guild_id)
-
-    # Use the centralized function to check for tester role
-    if not has_tester_role(interaction.user):
-        embed = discord.Embed(
-            title="❌ Tester Role Required", 
-            description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", 
-            color=discord.Color.red()
-        )
+    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
+    if not tester_role:
+        embed = discord.Embed(title="Tester Role Required", description="You must have the Tester role to use this command.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
-        print(f"DEBUG: User {interaction.user.name} does not have tester role. Roles: {[role.name for role in interaction.user.roles]}")
         return
 
     region = get_region_from_channel(channel.name)
-    print(f"DEBUG: Detected region: {region} in guild {guild_id}")
-    
     if not region:
-        embed = discord.Embed(
-            title="❌ Invalid Channel", 
-            description=f"This is not a valid waitlist channel. Channel name: {channel.name}\n\nValid channels are: waitlist-na, waitlist-eu, waitlist-as, waitlist-au", 
-            color=discord.Color.red()
-        )
+        embed = discord.Embed(title="Invalid Channel", description="This is not a valid waitlist channel.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # Remove user from active testers
-    if interaction.user.id in active_testers[guild_id][region]:
-        active_testers[guild_id][region].remove(interaction.user.id)
-        print(f"DEBUG: Removed user {interaction.user.name} from active testers for {region} in guild {guild_id}")
+    if interaction.user.id in active_testers[region]:
+        active_testers[region].remove(interaction.user.id)
 
-        # If no more active testers, close the queue
-        if not active_testers[guild_id][region]:
-            opened_queues[guild_id].discard(region)
-            print(f"DEBUG: No more active testers for {region} in guild {guild_id}, removed from opened_queues")
+        if not active_testers[region]:
+            opened_queues.discard(region)
+            # Preserve the queue; do not clear waitlists[region]
 
+        await update_waitlist_message(interaction.guild, region)
         await interaction.response.send_message(
             embed=discord.Embed(
                 title="👋 Left Active Testers",
@@ -977,17 +869,9 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
             ),
             ephemeral=True
         )
-        print(f"DEBUG: Successfully stopped queue for {region} in guild {guild_id}")
-        
-        await update_waitlist_message(interaction.guild, region)
     else:
-        embed = discord.Embed(
-            title="❌ Not Active", 
-            description=f"You are not an active tester for {region.upper()}.", 
-            color=discord.Color.red()
-        )
+        embed = discord.Embed(title="Not Active", description=f"You are not an active tester for {region.upper()}.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
-        print(f"DEBUG: User {interaction.user.name} was not active tester for {region} in guild {guild_id}")
 
 @bot.tree.command(name="nextuser", description="Create a private channel for the next person in waitlist (Tester role required)")
 @app_commands.describe(channel="The waitlist channel to get the next person from")
@@ -998,12 +882,9 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
     if channel is None:
         channel = interaction.channel
 
-    guild_id = interaction.guild.id
-    initialize_guild_data(guild_id)
-
-    # Use the centralized function to check for tester role
-    if not has_tester_role(interaction.user):
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
+    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
+    if not tester_role:
+        embed = discord.Embed(title="❌ Tester Role Required", description="You must have the Tester role to use this command.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -1013,12 +894,12 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    if not waitlists[guild_id][region]:
+    if not waitlists[region]:
         embed = discord.Embed(title="Empty Queue", description=f"No one is in the {region.upper()} waitlist.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    next_user_id = waitlists[guild_id][region].pop(0)
+    next_user_id = waitlists[region].pop(0)
     next_user = interaction.guild.get_member(next_user_id)
 
     if not next_user:
@@ -1026,8 +907,8 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    if next_user_id in active_testing_sessions[guild_id]:
-        existing_channel_id = active_testing_sessions[guild_id][next_user_id]
+    if next_user_id in active_testing_sessions:
+        existing_channel_id = active_testing_sessions[next_user_id]
         existing_channel = interaction.guild.get_channel(existing_channel_id)
 
         if existing_channel:
@@ -1035,7 +916,7 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         else:
-            del active_testing_sessions[guild_id][next_user_id]
+            del active_testing_sessions[next_user_id]
 
     category_name = f"Eval {region.upper()}"
     category = discord.utils.get(interaction.guild.categories, name=category_name)
@@ -1053,10 +934,9 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         next_user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
     }
 
-    # Get all possible tester roles and give them access
-    for role in interaction.guild.roles:
-        if role.name in ["Tester", "Verified Tester", "Staff Tester", "Admin", "Moderator"]:
-            overwrites[role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+    tester_role = discord.utils.get(interaction.guild.roles, name="Tester")
+    if tester_role:
+        overwrites[tester_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
     try:
         new_channel = await interaction.guild.create_text_channel(
@@ -1065,7 +945,7 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
             overwrites=overwrites
         )
 
-        active_testing_sessions[guild_id][next_user_id] = new_channel.id
+        active_testing_sessions[next_user_id] = new_channel.id
 
         roles_to_remove = []
         possible_role_names = [
@@ -1086,11 +966,11 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         for role in roles_to_remove:
             try:
                 await next_user.remove_roles(role)
-                print(f"DEBUG: Successfully removed role '{role.name}' from {next_user.name} in guild {guild_id}")
+                print(f"DEBUG: Successfully removed role '{role.name}' from {next_user.name}")
             except discord.Forbidden:
-                print(f"DEBUG: No permission to remove role '{role.name}' from {next_user.name} in guild {guild_id}")
+                print(f"DEBUG: No permission to remove role '{role.name}' from {next_user.name}")
             except Exception as e:
-                print(f"DEBUG: Error removing role '{role.name}' in guild {guild_id}: {e}")
+                print(f"DEBUG: Error removing role '{role.name}': {e}")
 
         await update_waitlist_message(interaction.guild, region)
 
@@ -1103,11 +983,11 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
             ephemeral=True
         )
 
-        cooldown_days = apply_cooldown(guild_id, next_user_id, next_user)
+        cooldown_days = apply_cooldown(next_user_id, next_user)
         role_type = "Booster" if has_booster_role(next_user) else "regular"
-        print(f"DEBUG: Applied {cooldown_days}-day cooldown for {role_type} user {next_user.name} in guild {guild_id}")
+        print(f"DEBUG: Applied {cooldown_days}-day cooldown for {role_type} user {next_user.name}")
 
-        user_data = user_info[guild_id].get(next_user_id, {})
+        user_data = user_info.get(next_user_id, {})
 
         if user_data:
             info_embed = discord.Embed(
@@ -1136,9 +1016,9 @@ async def passeval(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    # Use the centralized function to check for tester role
-    if not has_tester_role(interaction.user):
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
+    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
+    if not tester_role:
+        embed = discord.Embed(title="❌ Tester Role Required", description="You must have the Tester role to use this command.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -1240,8 +1120,118 @@ async def close(interaction: discord.Interaction):
         embed = discord.Embed(title="Error", description=f"An error occurred while closing the channel: {str(e)}", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="results", description="Post tier test results")
-@app_commands.describe(
+@bot.tree.command(name="add", description="Add a member to the current eval channel and handle waitlist/roles (Tester role required)")
+@app_commands.describe(member="Member to add to this eval channel")
+async def add_member_to_eval(interaction: discord.Interaction, member: discord.Member):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
+    # Must be tester
+    if not has_tester_role(interaction.user):
+        embed = discord.Embed(
+            title="❌ Tester Role Required",
+            description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    # Must be used inside an eval channel
+    if not interaction.channel.name.startswith("eval-"):
+        embed = discord.Embed(
+            title="❌ Wrong Channel",
+            description="This command can only be used inside an eval channel created for the test.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    guild = interaction.guild
+    guild_id = guild.id
+    initialize_guild_data(guild_id)
+
+    # Determine region from category name (supports both Eval X and High Eval X)
+    current_category = interaction.channel.category
+    if not current_category:
+        await interaction.response.send_message(embed=discord.Embed(title="No Category", description="Cannot determine region because this channel is not in a category.", color=discord.Color.red()), ephemeral=True)
+        return
+
+    category_name = current_category.name.lower()
+    region = None
+    for r in ["na", "eu", "as", "au"]:
+        if r in category_name:
+            region = r
+            break
+
+    if not region:
+        await interaction.response.send_message(embed=discord.Embed(title="Unknown Region", description="Could not determine region from this eval channel's category.", color=discord.Color.red()), ephemeral=True)
+        return
+
+    # Grant channel access to the member
+    try:
+        await interaction.channel.set_permissions(member, read_messages=True, send_messages=True)
+    except discord.Forbidden:
+        await interaction.response.send_message(embed=discord.Embed(title="Missing Permission", description="I don't have permission to edit channel permissions here.", color=discord.Color.red()), ephemeral=True)
+        return
+    except Exception as e:
+        await interaction.response.send_message(embed=discord.Embed(title="Error", description=f"Failed to grant channel access: {e}", color=discord.Color.red()), ephemeral=True)
+        return
+
+    # If the user is in any waitlist, remove them (preferably the detected region)
+    removed_from_regions = []
+    try:
+        for reg_key, queue in waitlists[guild_id].items():
+            if member.id in queue:
+                queue.remove(member.id)
+                removed_from_regions.append(reg_key)
+                # update that waitlist message too
+                await update_waitlist_message(guild, reg_key)
+    except Exception as e:
+        print(f"DEBUG: Error removing {member.id} from waitlists in guild {guild_id}: {e}")
+
+    # Remove waitlist and region matchmaking roles
+    roles_to_remove = []
+    possible_role_names = [
+        f"Waitlist-{region.upper()}",
+        f"{region.upper()} Waitlist",
+        f"waitlist-{region.lower()}",
+        f"{region.upper()} Matchmaking",
+        f"{region.lower()} matchmaking"
+    ]
+    for role_name in possible_role_names:
+        role = discord.utils.get(guild.roles, name=role_name)
+        if role and role in member.roles and role < guild.me.top_role:
+            roles_to_remove.append(role)
+
+    for role in roles_to_remove:
+        try:
+            await member.remove_roles(role, reason="Added to eval channel; cleaning waitlist/matchmaking role")
+            print(f"DEBUG: Removed role '{role.name}' from {member} in guild {guild_id}")
+        except discord.Forbidden:
+            print(f"DEBUG: Missing permission to remove role '{role.name}' from {member} in guild {guild_id}")
+        except Exception as e:
+            print(f"DEBUG: Error removing role '{role.name}' from {member} in guild {guild_id}: {e}")
+
+    # Apply cooldown immediately to the added member
+    cooldown_days = apply_cooldown(guild_id, member.id, member)
+
+    # Track that this member is now in an active testing session
+    try:
+        active_testing_sessions[guild_id][member.id] = interaction.channel.id
+    except Exception:
+        pass
+
+    # Acknowledge
+    removed_txt = (", removed from waitlist(s): " + ", ".join(r.upper() for r in removed_from_regions)) if removed_from_regions else ""
+    await interaction.response.send_message(
+        embed=discord.Embed(
+            title="✅ Member Added",
+            description=(f"{member.mention} has been granted access to this eval channel (region {region.upper()})." 
+                         f"{removed_txt}\n⏰ Cooldown applied: {cooldown_days} day(s)."),
+            color=discord.Color.green()
+        ),
+        ephemeral=True
+    )
     user="The user who took the test",
     ign="Minecraft IGN of the player",
     region="Region where the test was taken",
@@ -1289,12 +1279,9 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    guild_id = interaction.guild.id
-    initialize_guild_data(guild_id)
-
-    # Use the centralized function to check for tester role
-    if not has_tester_role(interaction.user):
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
+    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
+    if not tester_role:
+        embed = discord.Embed(title="❌ Tester Role Required", description="You must have the Tester role to use this command.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -1369,20 +1356,20 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
         print(f"Error adding reactions: {e}")
 
     tester_id = interaction.user.id
-    if tester_id not in tester_stats[guild_id]:
-        tester_stats[guild_id][tester_id] = 0
-    tester_stats[guild_id][tester_id] += 1
+    if tester_id not in tester_stats:
+        tester_stats[tester_id] = 0
+    tester_stats[tester_id] += 1
 
-    save_tester_stats(guild_id)
+    save_tester_stats()
 
     sheet_success = await add_ign_to_sheet(ign, earned_rank)
 
     await update_leaderboard(interaction.guild)
 
     user_id = user.id
-    if user_id in active_testing_sessions[guild_id]:
-        del active_testing_sessions[guild_id][user_id]
-        print(f"DEBUG: Removed active testing session for user {user_id} in guild {guild_id} after results posted")
+    if user_id in active_testing_sessions:
+        del active_testing_sessions[user_id]
+        print(f"DEBUG: Removed active testing session for user {user_id} after results posted")
 
     role_given = False
     earned_role = discord.utils.get(interaction.guild.roles, name=earned_rank)
@@ -1399,18 +1386,18 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
 
             if roles_to_remove:
                 await user.remove_roles(*roles_to_remove, reason=f"Removing all previous tier roles before giving {earned_rank}")
-                print(f"DEBUG: Removed old tier roles {[role.name for role in roles_to_remove]} from {user.name} in guild {guild_id}")
+                print(f"DEBUG: Removed old tier roles {[role.name for role in roles_to_remove]} from {user.name}")
 
             await user.add_roles(earned_role, reason=f"Earned {earned_rank} from tier test")
             role_given = True
-            print(f"DEBUG: Successfully gave {earned_rank} role to {user.name} in guild {guild_id}")
+            print(f"DEBUG: Successfully gave {earned_rank} role to {user.name}")
 
         except discord.Forbidden:
-            print(f"DEBUG: No permission to manage roles for {user.name} in guild {guild_id}")
+            print(f"DEBUG: No permission to manage roles for {user.name}")
         except Exception as e:
-            print(f"DEBUG: Error managing roles for {user.name} in guild {guild_id}: {e}")
+            print(f"DEBUG: Error managing roles for {user.name}: {e}")
     else:
-        print(f"DEBUG: Role {earned_rank} not found or bot doesn't have sufficient permissions in guild {guild_id}")
+        print(f"DEBUG: Role {earned_rank} not found or bot doesn't have sufficient permissions")
 
     confirmation_parts = [f"✅ Results posted for {user.mention} in {results_channel.mention}"]
 
@@ -1530,9 +1517,6 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    guild_id = interaction.guild.id
-    initialize_guild_data(guild_id)
-
     try:
         await member.ban(reason=reason)
         await interaction.response.send_message(
@@ -1551,7 +1535,7 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
             "reason": reason,
             "timestamp": datetime.datetime.now().isoformat()
         }
-        message_logs[guild_id].append(log_entry)
+        message_logs[interaction.guild.id].append(log_entry)
     except discord.Forbidden:
         embed = discord.Embed(title="Missing Permission", description="I do not have permission to ban this user.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed)
@@ -1565,9 +1549,6 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
 async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
-
-    guild_id = interaction.guild.id
-    initialize_guild_data(guild_id)
 
     try:
         await member.kick(reason=reason)
@@ -1587,7 +1568,7 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
             "reason": reason,
             "timestamp": datetime.datetime.now().isoformat()
         }
-        message_logs[guild_id].append(log_entry)
+        message_logs[interaction.guild.id].append(log_entry)
     except discord.Forbidden:
         embed = discord.Embed(title="Missing Permission", description="I do not have permission to kick this user.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed)
@@ -1601,9 +1582,6 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
 async def mute(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
-
-    guild_id = interaction.guild.id
-    initialize_guild_data(guild_id)
 
     mute_role = discord.utils.get(interaction.guild.roles, name="Muted")
     if not mute_role:
@@ -1630,7 +1608,7 @@ async def mute(interaction: discord.Interaction, member: discord.Member, reason:
             "reason": reason,
             "timestamp": datetime.datetime.now().isoformat()
         }
-        message_logs[guild_id].append(log_entry)
+        message_logs[interaction.guild.id].append(log_entry)
     except Exception as e:
         embed = discord.Embed(title="⚠️ Error", description=f"An error occurred: {e}", color=discord.Color.red())
         await interaction.response.send_message(embed=embed)
@@ -1641,9 +1619,6 @@ async def mute(interaction: discord.Interaction, member: discord.Member, reason:
 async def unmute(interaction: discord.Interaction, member: discord.Member):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
-
-    guild_id = interaction.guild.id
-    initialize_guild_data(guild_id)
 
     mute_role = discord.utils.get(interaction.guild.roles, name="Muted")
     if not mute_role:
@@ -1668,7 +1643,7 @@ async def unmute(interaction: discord.Interaction, member: discord.Member):
             "moderator": str(interaction.user),
             "timestamp": datetime.datetime.now().isoformat()
         }
-        message_logs[guild_id].append(log_entry)
+        message_logs[interaction.guild.id].append(log_entry)
     except Exception as e:
         embed = discord.Embed(title="⚠️ Error", description=f"An error occurred: {e}", color=discord.Color.red())
         await interaction.response.send_message(embed=embed)
@@ -1679,9 +1654,6 @@ async def unmute(interaction: discord.Interaction, member: discord.Member):
 async def warn(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
-
-    guild_id = interaction.guild.id
-    initialize_guild_data(guild_id)
 
     try:
         await member.send(f"⚠️ You have been warned in {interaction.guild.name}.\nReason: {reason}")
@@ -1701,7 +1673,7 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
             "reason": reason,
             "timestamp": datetime.datetime.now().isoformat()
         }
-        message_logs[guild_id].append(log_entry)
+        message_logs[interaction.guild.id].append(log_entry)
     except discord.Forbidden:
         embed = discord.Embed(title="DM Failed", description="I couldn't send a DM to this user, but the warning has been issued here.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed)
@@ -1796,10 +1768,12 @@ async def logs(interaction: discord.Interaction, limit: int = 10):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    guild_id = interaction.guild.id
-    initialize_guild_data(guild_id)
+    if interaction.guild.id not in message_logs:
+        embed = discord.Embed(title="❌ No Logs", description="No logs available for this server.", color=discord.Color.red())
+        await interaction.response.send_message(embed=embed)
+        return
 
-    last_logs = message_logs[guild_id][-limit:]
+    last_logs = message_logs[interaction.guild.id][-limit:]
     if not last_logs:
         await interaction.response.send_message(
             embed=discord.Embed(
@@ -1958,6 +1932,7 @@ async def commands_list(interaction: discord.Interaction):
 `/stopqueue [channel]` - Remove yourself from active testers (Tester role)
 `/nextuser [channel]` - Create private channel for next person (Tester role)
 `/passeval` - Transfer eval channel to High Eval category (Tester role)
+`/add @user` - Add a member to the current eval channel, remove from waitlist and remove region Matchmaking, apply cooldown (Tester role)
 `/close` - Close an eval channel (Tester role)
 `/results` - Post tier test results (Tester role)
 """, inline=False)
@@ -1999,20 +1974,6 @@ async def commands_list(interaction: discord.Interaction):
 
 # === HELPER FUNCTIONS ===
 
-def get_region_from_channel(channel_name: str) -> str:
-    """Extract region from channel name"""
-    print(f"DEBUG: get_region_from_channel called with: {channel_name}")
-    channel_lower = channel_name.lower()
-    
-    # Check for waitlist channels like "waitlist-na", "waitlist-eu", etc.
-    for region in ["na", "eu", "as", "au"]:
-        if f"waitlist-{region}" in channel_lower:
-            print(f"DEBUG: Found region {region} in channel {channel_name}")
-            return region
-    
-    print(f"DEBUG: No region found for channel: {channel_name}")
-    return None
-
 class WaitlistModal(discord.ui.Modal):
     def __init__(self):
         super().__init__(title="Enter Waitlist - VerseTL")
@@ -2048,22 +2009,9 @@ class WaitlistModal(discord.ui.Modal):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        guild_id = interaction.guild.id
-        initialize_guild_data(guild_id)
-        
-        # Check for Tierlist Restricted role
-        if has_tierlist_restricted_role(interaction.user):
-            embed = discord.Embed(
-                title="⛔ Access Restricted", 
-                description="Users with the 'Tierlist Restricted' role cannot access the testing waitlist.", 
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-
         user_id = interaction.user.id
-        if guild_id in user_test_cooldowns and user_id in user_test_cooldowns[guild_id]:
-            cooldown_time = user_test_cooldowns[guild_id][user_id]
+        if user_id in user_test_cooldowns:
+            cooldown_time = user_test_cooldowns[user_id]
             current_time = datetime.datetime.now()
             time_remaining = cooldown_time - current_time
 
@@ -2085,12 +2033,12 @@ class WaitlistModal(discord.ui.Modal):
                 await interaction.response.send_message(embed=cooldown_embed, ephemeral=True)
                 return
             else:
-                del user_test_cooldowns[guild_id][user_id]
-                save_user_cooldowns(guild_id)
-                print(f"DEBUG: Removed expired cooldown for user {user_id} in guild {guild_id}")
+                del user_test_cooldowns[user_id]
+                save_user_cooldowns()
+                print(f"DEBUG: Removed expired cooldown for user {user_id}")
 
-        if user_id in active_testing_sessions[guild_id]:
-            existing_channel_id = active_testing_sessions[guild_id][user_id]
+        if user_id in active_testing_sessions:
+            existing_channel_id = active_testing_sessions[user_id]
             existing_channel = interaction.guild.get_channel(existing_channel_id)
 
             if existing_channel:
@@ -2098,7 +2046,7 @@ class WaitlistModal(discord.ui.Modal):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
             else:
-                del active_testing_sessions[guild_id][user_id]
+                del active_testing_sessions[user_id]
 
         region_input = self.region.value.lower().strip()
 
@@ -2109,12 +2057,12 @@ class WaitlistModal(discord.ui.Modal):
             return
 
         user_regions = []
-        for region, queue in waitlists[guild_id].items():
+        for region, queue in waitlists.items():
             if interaction.user.id in queue:
                 user_regions.append(region)
 
-        if interaction.user.id in user_info[guild_id]:
-            existing_region = user_info[guild_id][interaction.user.id]["region"].lower()
+        if interaction.user.id in user_info:
+            existing_region = user_info[interaction.user.id]["region"].lower()
             embed = discord.Embed(title="ℹ️ Form Already Submitted", description=f"You have already submitted a form for the {existing_region.upper()} region. Visit <#waitlist-{existing_region}> to join the queue.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
@@ -2130,7 +2078,7 @@ class WaitlistModal(discord.ui.Modal):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        user_info[guild_id][interaction.user.id] = {
+        user_info[interaction.user.id] = {
             "ign": self.minecraft_ign.value,
             "server": self.minecraft_server.value,
             "region": region_input.upper()
@@ -2164,40 +2112,52 @@ class WaitlistModal(discord.ui.Modal):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+def get_region_from_channel(channel_name: str):
+    print(f"DEBUG: get_region_from_channel called with: {channel_name}")
+    channel_lower = channel_name.lower()
+    # allow channels that contain "waitlist-na" etc anywhere in the name
+    for key in ["na", "eu", "as", "au"]:
+        expected_sub = f"waitlist-{key}"
+        print(f"DEBUG: Checking if '{expected_sub}' in '{channel_lower}'")
+        if expected_sub in channel_lower:
+            print(f"DEBUG: Found match for region: {key}")
+            return key
+    print(f"DEBUG: No region found for channel: {channel_name}")
+    return None
+
 async def update_waitlist_message(guild: discord.Guild, region: str):
-    guild_id = guild.id
-    if not is_guild_authorized(guild_id):
+    if not is_guild_authorized(getattr(guild, "id", None)):
         return
 
-    initialize_guild_data(guild_id)
+    global last_test_session
 
     channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
     if not channel:
-        print(f"DEBUG: Channel waitlist-{region} not found in guild {guild_id}")
+        print(f"DEBUG: Channel waitlist-{region} not found")
         return
 
     tester_ids = []
-    if region in opened_queues[guild_id]:
-        for tester_id in active_testers[guild_id][region]:
+    if region in opened_queues:
+        for tester_id in active_testers[region]:
             member = guild.get_member(tester_id)
             if member and member.status != discord.Status.offline:
                 tester_ids.append(tester_id)
 
     queue_display = "\n".join(
         [f"{i+1}. <@{uid}>"
-         for i, uid in enumerate(waitlists[guild_id][region])]) or "*No one in queue*"
+         for i, uid in enumerate(waitlists[region])]) or "*No one in queue*"
     testers_display = "\n".join(
         [f"{i+1}. <@{uid}>"
          for i, uid in enumerate(tester_ids)]) or "*No testers online*"
 
-    region_last_active = last_region_activity[guild_id].get(region)
+    region_last_active = last_region_activity.get(region)
     if region_last_active:
-        timestamp_unix = int(region_last_active.timestamp())
-        timestamp = f"<t:{timestamp_unix}:R>"
+        unix_ts = int(region_last_active.timestamp())
+        last_test_text = f"<t:{unix_ts}:R>"
     else:
-        timestamp = "Never"
+        last_test_text = "Never"
 
-    if region in opened_queues[guild_id] and tester_ids:
+    if region in opened_queues and tester_ids:
         color = discord.Color.from_rgb(220, 80, 120)
         description = (
             f"**Tester(s) Available!**\n\n"
@@ -2209,16 +2169,16 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     else:
         color = discord.Color(15880807)
         description = (
-            f"No testers for your region are available at this time.\n"
-            f"You will be pinged when a tester is available.\n"
-            f"Check back later!\n\n"
-            f"Last Test At: {timestamp}")
+            "No testers for your region are available at this time.\n"
+            "You will be pinged when a tester is available.\n"
+            "Check back later!\n\n"
+            f"Last Test At: {last_test_text}")
         show_button = False
         ping_content = None
 
     embed = discord.Embed(description=description, color=color)
 
-    if not (region in opened_queues[guild_id] and tester_ids):
+    if not (region in opened_queues and tester_ids):
         embed.set_author(
             name="[1.21+] VerseTL",
             icon_url="https://upnow-prod.ff45e40d1a1c8f7e7de4e976d0c9e555.r2.cloudflarestorage.com/dzbRgzDeFWeXAQx0Q8EGh5FXSiF3/0670e4c9-d8d3-4f25-85cc-03717121a17d?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=2f488bd324502ec20fee5b40e9c9ed39%2F20250812%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20250812T161311Z&X-Amz-Expires=43200&X-Amz-Signature=7a14dab019355ab773cf5eb1c049322c48030aeb575ccd744d534081b61291b5&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22bigger%20version%20Verse%20ranked%20logo.png%22"
@@ -2233,33 +2193,33 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
                               custom_id="open_form"))
 
     try:
-        if guild_id in waitlist_messages and region in waitlist_messages[guild_id]:
+        if region in waitlist_messages:
             try:
-                stored_message = waitlist_messages[guild_id][region]
+                stored_message = waitlist_messages[region]
                 await stored_message.edit(content=ping_content, embed=embed, view=view)
-                print(f"DEBUG: Successfully edited stored message object for {region} in guild {guild_id}")
+                print(f"DEBUG: Successfully edited stored message object for {region}")
                 return
             except (discord.NotFound, discord.HTTPException) as e:
-                print(f"DEBUG: Stored message object invalid for {region} in guild {guild_id}: {e}")
-                del waitlist_messages[guild_id][region]
-                if guild_id in waitlist_message_ids and region in waitlist_message_ids[guild_id]:
-                    del waitlist_message_ids[guild_id][region]
+                print(f"DEBUG: Stored message object invalid for {region}: {e}")
+                del waitlist_messages[region]
+                if region in waitlist_message_ids:
+                    del waitlist_message_ids[region]
 
-        if guild_id in waitlist_message_ids and region in waitlist_message_ids[guild_id]:
+        if region in waitlist_message_ids:
             try:
-                message_id = waitlist_message_ids[guild_id][region]
+                message_id = waitlist_message_ids[region]
                 fetched_message = await channel.fetch_message(message_id)
-                waitlist_messages[guild_id][region] = fetched_message
+                waitlist_messages[region] = fetched_message
                 await fetched_message.edit(content=ping_content, embed=embed, view=view)
-                print(f"DEBUG: Successfully fetched and edited message {message_id} for {region} in guild {guild_id}")
+                print(f"DEBUG: Successfully fetched and edited message {message_id} for {region}")
                 return
             except discord.NotFound:
-                print(f"DEBUG: Message ID {waitlist_message_ids[guild_id][region]} not found for {region} in guild {guild_id}")
-                del waitlist_message_ids[guild_id][region]
+                print(f"DEBUG: Message ID {waitlist_message_ids[region]} not found for {region}")
+                del waitlist_message_ids[region]
             except Exception as e:
-                print(f"DEBUG: Error fetching message for {region} in guild {guild_id}: {e}")
-                if guild_id in waitlist_message_ids and region in waitlist_message_ids[guild_id]:
-                    del waitlist_message_ids[guild_id][region]
+                print(f"DEBUG: Error fetching message for {region}: {e}")
+                if region in waitlist_message_ids:
+                    del waitlist_message_ids[region]
 
         existing_message = None
         async for message in channel.history(limit=10):
@@ -2268,10 +2228,10 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
                 break
 
         if existing_message:
-            waitlist_messages[guild_id][region] = existing_message
-            waitlist_message_ids[guild_id][region] = existing_message.id
+            waitlist_messages[region] = existing_message
+            waitlist_message_ids[region] = existing_message.id
             await existing_message.edit(content=ping_content, embed=embed, view=view)
-            print(f"DEBUG: Found and edited existing message {existing_message.id} for {region} in guild {guild_id}")
+            print(f"DEBUG: Found and edited existing message {existing_message.id} for {region}")
 
             message_count = 0
             async for message in channel.history(limit=20):
@@ -2285,17 +2245,16 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
                         pass
         else:
             new_message = await channel.send(content=ping_content, embed=embed, view=view)
-            waitlist_messages[guild_id][region] = new_message
-            waitlist_message_ids[guild_id][region] = new_message.id
-            print(f"DEBUG: Created new message {new_message.id} for {region} in guild {guild_id}")
+            waitlist_messages[region] = new_message
+            waitlist_message_ids[region] = new_message.id
+            print(f"DEBUG: Created new message {new_message.id} for {region}")
 
     except Exception as e:
-        print(f"DEBUG: Error in update_waitlist_message for {region} in guild {guild_id}: {e}")
+        print(f"DEBUG: Error in update_waitlist_message for {region}: {e}")
 
 async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str, position: int):
     """Log when a user joins a queue to the logs channel in Staff category"""
-    guild_id = guild.id
-    if not is_guild_authorized(guild_id):
+    if not is_guild_authorized(getattr(guild, "id", None)):
         return
 
     try:
@@ -2304,7 +2263,7 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
             staff_category = discord.utils.get(guild.categories, name="STAFF")
 
         if not staff_category:
-            print(f"DEBUG: Staff category not found for logging in guild {guild_id}")
+            print("DEBUG: Staff category not found for logging")
             return
 
         logs_channel = None
@@ -2314,10 +2273,10 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
                 break
 
         if not logs_channel:
-            print(f"DEBUG: Logs channel not found in Staff category for guild {guild_id}")
+            print("DEBUG: Logs channel not found in Staff category")
             return
 
-        user_data = user_info[guild_id].get(user.id, {})
+        user_data = user_info.get(user.id, {})
         ign = user_data.get('ign', 'N/A')
         server = user_data.get('server', 'N/A')
 
@@ -2346,25 +2305,22 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
         embed.set_footer(text="Queue Join Log", icon_url=guild.icon.url if guild.icon else None)
 
         await logs_channel.send(embed=embed)
-        print(f"DEBUG: Logged queue join for {user.name} ({cooldown_type}) in {region.upper()} region for guild {guild_id}")
+        print(f"DEBUG: Logged queue join for {user.name} ({cooldown_type}) in {region.upper()} region")
 
     except Exception as e:
-        print(f"DEBUG: Error logging queue join in guild {guild_id}: {e}")
+        print(f"DEBUG: Error logging queue join: {e}")
 
 async def update_leaderboard(guild: discord.Guild):
     """Update the tester leaderboard in the testing-leaderboard channel"""
-    guild_id = guild.id
-    if not is_guild_authorized(guild_id):
+    if not is_guild_authorized(getattr(guild, "id", None)):
         return
-
-    initialize_guild_data(guild_id)
 
     leaderboard_channel = discord.utils.get(guild.text_channels, name="🏅┃testing-leaderboard")
     if not leaderboard_channel:
-        print(f"DEBUG: Leaderboard channel not found in guild {guild_id}")
+        print("DEBUG: Leaderboard channel not found")
         return
 
-    sorted_testers = sorted(tester_stats[guild_id].items(), key=lambda x: x[1], reverse=True)[:10]
+    sorted_testers = sorted(tester_stats.items(), key=lambda x: x[1], reverse=True)[:10]
 
     embed = discord.Embed(
         color=0x2f3136
@@ -2423,7 +2379,7 @@ async def update_leaderboard(guild: discord.Guild):
 
         if existing_message:
             await existing_message.edit(embed=embed)
-            print(f"DEBUG: Updated existing leaderboard message in guild {guild_id}")
+            print("DEBUG: Updated existing leaderboard message")
 
             message_count = 0
             async for message in leaderboard_channel.history(limit=20):
@@ -2439,101 +2395,26 @@ async def update_leaderboard(guild: discord.Guild):
                         pass
         else:
             await leaderboard_channel.send(embed=embed)
-            print(f"DEBUG: Created new leaderboard message in guild {guild_id}")
+            print("DEBUG: Created new leaderboard message")
 
     except Exception as e:
-        print(f"DEBUG: Error updating leaderboard in guild {guild_id}: {e}")
-
-@bot.tree.command(name="reset_leaderboard", description="Reset the tester leaderboard (Admin only)")
-@app_commands.default_permissions(administrator=True)
-async def reset_leaderboard(interaction: discord.Interaction):
-    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
-        return
-
-    guild_id = interaction.guild.id
-    initialize_guild_data(guild_id)
-
-    # Réinitialiser les statistiques des testeurs pour ce serveur
-    tester_stats[guild_id] = {}
-    save_tester_stats(guild_id)
-
-    # Mettre à jour le leaderboard pour afficher les données vides
-    await update_leaderboard(interaction.guild)
-
-    await interaction.response.send_message(
-        embed=discord.Embed(
-            title="✅ Leaderboard Reset",
-            description="The tester leaderboard has been reset and all statistics have been cleared.",
-            color=discord.Color.green()
-        ),
-        ephemeral=True
-    )
-
-async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str, position: int):
-    """Notify the first person in queue via DM that a tester is now available"""
-    guild_id = guild.id
-    if not is_guild_authorized(guild_id):
-        return
-        
-    if not waitlists[guild_id][region]:
-        return
-        
-    first_user_id = waitlists[guild_id][region][0]
-    first_user = guild.get_member(first_user_id)
-    
-    if not first_user:
-        return
-        
-    try:
-        user_data = user_info[guild_id].get(first_user_id, {})
-        ign = user_data.get('ign', 'N/A')
-        preferred_server = user_data.get('server', 'N/A')
-        
-        embed = discord.Embed(
-            title="🎮 Tester Available!",
-            description=f"Good news! A tester is now available for the **{region.upper()}** region.\n\nYou are **first in queue** and can now be selected for testing!",
-            color=0x00ff00
-        )
-        
-        embed.add_field(name="📍 Region", value=region.upper(), inline=True)
-        embed.add_field(name="👤 Your IGN", value=ign, inline=True)
-        embed.add_field(name="🎯 Preferred Server", value=preferred_server, inline=True)
-        
-        embed.add_field(
-            name="📢 Next Steps", 
-            value=f"Visit the {guild.name} server and check <#waitlist-{region}> for updates. You may be selected soon!", 
-            inline=False
-        )
-        
-        embed.set_thumbnail(url=guild.icon.url if guild.icon else None)
-        embed.set_footer(text=f"VerseTL Testing System • {guild.name}", icon_url=guild.icon.url if guild.icon else None)
-        
-        await first_user.send(embed=embed)
-        print(f"DEBUG: Sent DM notification to {first_user.name} (first in {region.upper()} queue) for guild {guild_id}")
-        
-    except discord.Forbidden:
-        print(f"DEBUG: Could not send DM to {first_user.name} - DMs disabled (guild {guild_id})")
-    except Exception as e:
-        print(f"DEBUG: Error sending DM to first user in queue for guild {guild_id}: {e}")
+        print(f"DEBUG: Error updating leaderboard: {e}")
 
 async def create_initial_waitlist_message(guild: discord.Guild, region: str):
     """Create the initial waitlist message and store references to it"""
-    guild_id = guild.id
-    if not is_guild_authorized(guild_id):
+    if not is_guild_authorized(getattr(guild, "id", None)):
         return
-
-    initialize_guild_data(guild_id)
 
     channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
     if not channel:
         return
 
-    region_last_active = last_region_activity[guild_id].get(region)
+    region_last_active = last_region_activity.get(region)
     if region_last_active:
-        timestamp_unix = int(region_last_active.timestamp())
-        timestamp = f"<t:{timestamp_unix}:R>"
+        unix_ts = int(region_last_active.timestamp())
+        last_test_text = f"<t:{unix_ts}:R>"
     else:
-        timestamp = "Never"
+        last_test_text = "Never"
 
     embed = discord.Embed(
         title="No Testers Online",
@@ -2541,7 +2422,7 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
             f"No testers for your region are available at this time.\n"
             f"You will be pinged when a tester is available.\n"
             f"Check back later!\n\n"
-            f"Last Test At: {timestamp}"
+            f"Last Test At: {last_test_text}"
         ),
         color=discord.Color(15880807)
     )
@@ -2554,56 +2435,54 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
     try:
         initial_message = await channel.send(embed=embed)
 
-        waitlist_messages[guild_id][region] = initial_message
-        waitlist_message_ids[guild_id][region] = initial_message.id
+        waitlist_messages[region] = initial_message
+        waitlist_message_ids[region] = initial_message.id
 
-        print(f"DEBUG: Created and stored initial message {initial_message.id} for {region} in guild {guild_id}")
+        print(f"DEBUG: Created and stored initial message {initial_message.id} for {region}")
 
     except Exception as e:
-        print(f"DEBUG: Error creating initial message for {region} in guild {guild_id}: {e}")
+        print(f"DEBUG: Error creating initial message for {region}: {e}")
 
 # === TASKS ===
 
 @tasks.loop(minutes=1)
 async def refresh_messages():
-    print("DEBUG: Starting periodic refresh of waitlist messages for all guilds")
+    global last_test_session
+    last_test_session = datetime.datetime.now()
+
+    print("DEBUG: Starting periodic refresh of waitlist messages")
     for guild in bot.guilds:
-        guild_id = guild.id
-        if not is_guild_authorized(guild_id):
+        if not is_guild_authorized(getattr(guild, "id", None)):
             continue
-        for region in ["na", "eu", "as", "au"]:
+        for region in waitlists.keys():
             try:
                 await update_waitlist_message(guild, region)
-                print(f"DEBUG: Successfully refreshed waitlist message for {region} in guild {guild_id}")
+                print(f"DEBUG: Successfully refreshed waitlist message for {region}")
             except Exception as e:
-                print(f"DEBUG: Error refreshing waitlist message for {region} in guild {guild_id}: {e}")
+                print(f"DEBUG: Error refreshing waitlist message for {region}: {e}")
 
 @tasks.loop(hours=1)
 async def cleanup_expired_cooldowns():
-    """Remove expired cooldowns from memory and file for all guilds"""
+    """Remove expired cooldowns from memory and file"""
     current_time = datetime.datetime.now()
-    
-    for guild_id in list(user_test_cooldowns.keys()):
-        expired_users = []
-        guild_cooldowns = user_test_cooldowns[guild_id]
+    expired_users = []
 
-        for user_id, cooldown_time in guild_cooldowns.items():
-            if cooldown_time <= current_time:
-                expired_users.append(user_id)
+    for user_id, cooldown_time in user_test_cooldowns.items():
+        if cooldown_time <= current_time:
+            expired_users.append(user_id)
 
-        if expired_users:
-            for user_id in expired_users:
-                del user_test_cooldowns[guild_id][user_id]
+    if expired_users:
+        for user_id in expired_users:
+            del user_test_cooldowns[user_id]
 
-            save_user_cooldowns(guild_id)
-            print(f"DEBUG: Cleaned up {len(expired_users)} expired cooldowns for guild {guild_id}")
+        save_user_cooldowns()
+        print(f"DEBUG: Cleaned up {len(expired_users)} expired cooldowns")
 
 @tasks.loop(minutes=30)
 async def periodic_save_activities():
-    """Periodically save last region activities to file for all guilds"""
-    for guild_id in last_region_activity.keys():
-        save_last_region_activity(guild_id)
-    print("DEBUG: Periodic save of last region activities completed for all guilds")
+    """Periodically save last region activities to file"""
+    save_last_region_activity()
+    print("DEBUG: Periodic save of last region activities completed")
 
 # === RUN BOT ===
 
