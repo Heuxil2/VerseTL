@@ -140,6 +140,31 @@ def initialize_guild_data(guild_id: int):
     if guild_id not in active_testing_sessions:
         active_testing_sessions[guild_id] = {}
 
+def save_user_info():
+    """Save user form information to JSON file"""
+    try:
+        with open(USER_INFO_FILE, 'w') as f:
+            json.dump(user_info, f, indent=2)
+        print(f"DEBUG: Saved user forms to {USER_INFO_FILE}")
+    except Exception as e:
+        print(f"DEBUG: Error saving user forms: {e}")
+
+def load_user_info():
+    """Load user form information from JSON file"""
+    global user_info
+    try:
+        if os.path.exists(USER_INFO_FILE):
+            with open(USER_INFO_FILE, 'r') as f:
+                loaded_info = json.load(f)
+                user_info = {int(user_id): data for user_id, data in loaded_info.items()}
+            print(f"DEBUG: Loaded {len(user_info)} user forms from {USER_INFO_FILE}")
+        else:
+            print(f"DEBUG: No existing user forms file found, starting fresh")
+            user_info = {}
+    except Exception as e:
+        print(f"DEBUG: Error loading user forms: {e}")
+        user_info = {}
+
 def save_tester_stats():
     """Save tester statistics to JSON file"""
     try:
@@ -368,6 +393,7 @@ async def on_ready():
     load_tester_stats()
     load_user_cooldowns()
     load_last_region_activity()
+    load_user_info()
 
     global opened_queues, active_testers, waitlists, waitlist_message_ids, waitlist_messages, active_testing_sessions
     opened_queues.clear()
