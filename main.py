@@ -126,11 +126,14 @@ def apply_cooldown(user_id: int, member: discord.Member):
     return cooldown_days
 
 def has_tester_role(member: discord.Member) -> bool:
-    """Check if a member has any tester role"""
-    tester_roles = ["Tester", "Verified Tester", "Staff Tester"]
-    for role_name in tester_roles:
-        if discord.utils.get(member.roles, name=role_name):
-            return True
+    """Check if a member has any tester role (case-insensitive)"""
+    tester_roles = {"tester", "verified tester", "staff tester"}
+    for role in member.roles:
+        try:
+            if (role.name or "").lower() in tester_roles:
+                return True
+        except AttributeError:
+            continue
     return False
 
 def initialize_guild_data(guild_id: int):
@@ -834,9 +837,8 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     print(f"DEBUG: /startqueue called by {interaction.user.name} for channel {channel.name}")
 
-    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
-    if not tester_role:
-        embed = discord.Embed(title="Tester Role Required", description="You must have the Tester role to use this command.", color=discord.Color.red())
+    if not has_tester_role(interaction.user):
+        embed = discord.Embed(title="Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -924,9 +926,8 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
     if channel is None:
         channel = interaction.channel
 
-    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
-    if not tester_role:
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have the Tester role to use this command.", color=discord.Color.red())
+    if not has_tester_role(interaction.user):
+        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
