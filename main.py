@@ -68,6 +68,7 @@ waitlist_messages = {}  # Store actual message objects for each region
 opened_queues = set()
 active_testers = {"na": [], "eu": [], "as": [], "au": []}  # Track active testers per region
 user_info = {}  # Store user form information {user_id: {"ign": str, "server": str, "region": str}}
+USER_INFO_FILE = "user_forms.json"  # File to persist user form data
 last_test_session = datetime.datetime.now()  # Initialize with current time instead of None
 last_region_activity = {"na": None, "eu": None, "as": None, "au": None}  # Track last activity per region
 tester_stats = {}  # Track test counts for each tester {user_id: test_count}
@@ -123,6 +124,21 @@ def apply_cooldown(user_id: int, member: discord.Member):
     role_type = "Booster" if has_booster_role(member) else "Regular"
     print(f"DEBUG: Applied {cooldown_days}-day cooldown for {role_type} user {member.name} (ID: {user_id}) until {cooldown_end}")
     return cooldown_days
+
+def has_tester_role(member: discord.Member) -> bool:
+    """Check if a member has any tester role"""
+    tester_roles = ["Tester", "Verified Tester", "Staff Tester"]
+    for role_name in tester_roles:
+        if discord.utils.get(member.roles, name=role_name):
+            return True
+    return False
+
+def initialize_guild_data(guild_id: int):
+    """Initialize guild data structures if they don't exist"""
+    if guild_id not in waitlists:
+        waitlists[guild_id] = {"na": [], "eu": [], "as": [], "au": []}
+    if guild_id not in active_testing_sessions:
+        active_testing_sessions[guild_id] = {}
 
 def save_tester_stats():
     """Save tester statistics to JSON file"""
@@ -1213,7 +1229,7 @@ async def add_member_to_eval(interaction: discord.Interaction, member: discord.M
             print(f"DEBUG: Error removing role '{role.name}' from {member} in guild {guild_id}: {e}")
 
     # Apply cooldown immediately to the added member
-    cooldown_days = apply_cooldown(guild_id, member.id, member)
+    cooldown_days = apply_cooldown(member.id, member)
 
     # Track that this member is now in an active testing session
     try:
@@ -1232,6 +1248,9 @@ async def add_member_to_eval(interaction: discord.Interaction, member: discord.M
         ),
         ephemeral=True
     )
+
+@bot.tree.command(name="results", description="Post tier test results (Tester role required)")
+@app_commands.describe(
     user="The user who took the test",
     ign="Minecraft IGN of the player",
     region="Region where the test was taken",
