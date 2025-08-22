@@ -1114,22 +1114,7 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         role_type = "Booster" if has_booster_role(next_user) else "regular"
         print(f"DEBUG: Applied {cooldown_days}-day cooldown for {role_type} user {next_user.name}")
 
-        user_data = user_info.get(next_user_id, {})
-
-        if user_data:
-            info_embed = discord.Embed(
-                title="Welcome to your Evaluation Session",
-                description=f"Hello {next_user.mention}! You have been selected for testing in the {region.upper()} region.\n\nYour tester {interaction.user.mention} will guide you through the process.\n\n**IGN:** {user_data.get('ign', 'N/A')}\n**Preferred Server:** {user_data.get('server', 'N/A')}",
-                color=0x00ff7f
-            )
-            await new_channel.send(embed=info_embed)
-        else:
-            info_embed = discord.Embed(
-                title="Welcome to your Evaluation Session",
-                description=f"Hello {next_user.mention}! You have been selected for testing in the {region.upper()} region.\n\nYour tester {interaction.user.mention} will guide you through the process.\n\n**IGN:** N/A\n**Preferred Server:** N/A",
-                color=0x00ff7f
-            )
-            await new_channel.send(embed=info_embed)
+        await send_eval_welcome_message(new_channel, region, next_user, interaction.user)
 
     except discord.Forbidden:
         embed = discord.Embed(title="Missing Permission", description="I don't have permission to create channels in that category.", color=discord.Color.red())
@@ -2507,6 +2492,28 @@ async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
 # Backwards-compat wrapper (kept if other parts still call it)
 async def notify_first_in_queue(guild: discord.Guild, region: str, tester: discord.Member):
     await maybe_notify_queue_top_change(guild, region)
+
+async def send_eval_welcome_message(channel: discord.TextChannel, region: str, player: discord.Member | None, tester: discord.Member | None):
+    """Send the standard welcome message in an eval channel (works for normal and high eval)."""
+    try:
+        user_data = user_info.get(player.id, {}) if player else {}
+        ign = user_data.get('ign', 'N/A')
+        server = user_data.get('server', 'N/A')
+        player_mention = player.mention if player else "Player"
+        tester_mention = tester.mention if tester else "a tester"
+
+        info_embed = discord.Embed(
+            title="Welcome to your Evaluation Session",
+            description=(
+                f"Hello {player_mention}! You have been selected for testing in the {region.upper()} region.\n\n"
+                f"Your tester {tester_mention} will guide you through the process.\n\n"
+                f"**IGN:** {ign}\n**Preferred Server:** {server}"
+            ),
+            color=0x00ff7f
+        )
+        await channel.send(embed=info_embed)
+    except Exception as e:
+        print(f"DEBUG: Failed to send welcome message in {channel.id}: {e}")
 
 async def create_initial_waitlist_message(guild: discord.Guild, region: str):
     """Create the initial waitlist message and store references to it"""
