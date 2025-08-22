@@ -800,6 +800,56 @@ async def leave(interaction: discord.Interaction):
         embed = discord.Embed(title="ℹ️ Not in Queue", description="You are not in any waitlist.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@bot.tree.command(name="removecoodlown", description="Remove a user's cooldown before testing")
+@app_commands.describe(member="Member to clear cooldown for")
+async def removecoodlown(interaction: discord.Interaction, member: discord.Member):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
+    # Allow Testers or users with Manage Roles/Admin
+    tester_role = None
+    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester"]
+    for role in interaction.user.roles:
+        if role.name in tester_role_names:
+            tester_role = role
+            break
+
+    if not (tester_role or interaction.user.guild_permissions.manage_roles or interaction.user.guild_permissions.administrator):
+        embed = discord.Embed(
+            title="Permission Required",
+            description="You must be a Tester or have the Manage Roles permission to use this command.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    had_cooldown = member.id in user_test_cooldowns
+    if had_cooldown:
+        try:
+            del user_test_cooldowns[member.id]
+            save_user_cooldowns()
+        except Exception:
+            pass
+
+    if had_cooldown:
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="✅ Cooldown Removed",
+                description=f"The testing cooldown for {member.mention} has been cleared.",
+                color=discord.Color.green()
+            ),
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="ℹ️ No Active Cooldown",
+                description=f"{member.mention} currently has no active cooldown.",
+                color=discord.Color.orange()
+            ),
+            ephemeral=True
+        )
+
 @bot.tree.command(name="startqueue", description="Start the queue for testing (Tester role required)")
 @app_commands.describe(channel="The waitlist channel to start the queue for")
 async def startqueue(interaction: discord.Interaction, channel: discord.TextChannel = None):
@@ -1922,6 +1972,7 @@ async def commands_list(interaction: discord.Interaction):
 `/passeval` - Transfer eval channel to High Eval category (Tester role)
 `/close` - Close an eval channel (Tester role)
 `/results` - Post tier test results (Tester role)
+`/removecoodlown @user` - Remove a user's test cooldown
 """, inline=False)
 
     embed.add_field(name="🛡️ **Moderation Commands**", value="""
@@ -2138,6 +2189,12 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         print(f"DEBUG: Channel waitlist-{region} not found")
         return
 
+    # Ensure per-guild message storage
+    if guild.id not in waitlist_messages:
+        waitlist_messages[guild.id] = {}
+    if guild.id not in waitlist_message_ids:
+        waitlist_message_ids[guild.id] = {}
+
     tester_ids = []
     if region in opened_queues:
         for tester_id in active_testers[region]:
@@ -2198,33 +2255,37 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
                               custom_id="open_form"))
 
     try:
-        if region in waitlist_messages:
+        # Read per-guild caches
+        guild_msgs = waitlist_messages[guild.id]
+        guild_msg_ids = waitlist_message_ids[guild.id]
+
+        if region in guild_msgs:
             try:
-                stored_message = waitlist_messages[region]
+                stored_message = guild_msgs[region]
                 await stored_message.edit(content=ping_content, embed=embed, view=view)
-                print(f"DEBUG: Successfully edited stored message object for {region}")
+                print(f"DEBUG: Successfully edited stored message object for {region} in guild {guild.id}")
                 return
             except (discord.NotFound, discord.HTTPException) as e:
-                print(f"DEBUG: Stored message object invalid for {region}: {e}")
-                del waitlist_messages[region]
-                if region in waitlist_message_ids:
-                    del waitlist_message_ids[region]
+                print(f"DEBUG: Stored message object invalid for {region} in guild {guild.id}: {e}")
+                del guild_msgs[region]
+                if region in guild_msg_ids:
+                    del guild_msg_ids[region]
 
-        if region in waitlist_message_ids:
+        if region in guild_msg_ids:
             try:
-                message_id = waitlist_message_ids[region]
+                message_id = guild_msg_ids[region]
                 fetched_message = await channel.fetch_message(message_id)
-                waitlist_messages[region] = fetched_message
+                guild_msgs[region] = fetched_message
                 await fetched_message.edit(content=ping_content, embed=embed, view=view)
-                print(f"DEBUG: Successfully fetched and edited message {message_id} for {region}")
+                print(f"DEBUG: Successfully fetched and edited message {message_id} for {region} in guild {guild.id}")
                 return
             except discord.NotFound:
-                print(f"DEBUG: Message ID {waitlist_message_ids[region]} not found for {region}")
-                del waitlist_message_ids[region]
+                print(f"DEBUG: Message ID {guild_msg_ids[region]} not found for {region} in guild {guild.id}")
+                del guild_msg_ids[region]
             except Exception as e:
-                print(f"DEBUG: Error fetching message for {region}: {e}")
-                if region in waitlist_message_ids:
-                    del waitlist_message_ids[region]
+                print(f"DEBUG: Error fetching message for {region} in guild {guild.id}: {e}")
+                if region in guild_msg_ids:
+                    del guild_msg_ids[region]
 
         existing_message = None
         async for message in channel.history(limit=10):
@@ -2233,10 +2294,10 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
                 break
 
         if existing_message:
-            waitlist_messages[region] = existing_message
-            waitlist_message_ids[region] = existing_message.id
+            guild_msgs[region] = existing_message
+            guild_msg_ids[region] = existing_message.id
             await existing_message.edit(content=ping_content, embed=embed, view=view)
-            print(f"DEBUG: Found and edited existing message {existing_message.id} for {region}")
+            print(f"DEBUG: Found and edited existing message {existing_message.id} for {region} in guild {guild.id}")
 
             message_count = 0
             async for message in channel.history(limit=20):
@@ -2250,12 +2311,12 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
                         pass
         else:
             new_message = await channel.send(content=ping_content, embed=embed, view=view)
-            waitlist_messages[region] = new_message
-            waitlist_message_ids[region] = new_message.id
-            print(f"DEBUG: Created new message {new_message.id} for {region}")
+            guild_msgs[region] = new_message
+            guild_msg_ids[region] = new_message.id
+            print(f"DEBUG: Created new message {new_message.id} for {region} in guild {guild.id}")
 
     except Exception as e:
-        print(f"DEBUG: Error in update_waitlist_message for {region}: {e}")
+        print(f"DEBUG: Error in update_waitlist_message for {region} in guild {guild.id}: {e}")
 
 async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str, position: int):
     """Log when a user joins a queue to the logs channel in Staff category"""
@@ -2482,13 +2543,19 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
     try:
         initial_message = await channel.send(embed=embed)
 
-        waitlist_messages[region] = initial_message
-        waitlist_message_ids[region] = initial_message.id
+        # Ensure per-guild storage and record
+        if guild.id not in waitlist_messages:
+            waitlist_messages[guild.id] = {}
+        if guild.id not in waitlist_message_ids:
+            waitlist_message_ids[guild.id] = {}
 
-        print(f"DEBUG: Created and stored initial message {initial_message.id} for {region}")
+        waitlist_messages[guild.id][region] = initial_message
+        waitlist_message_ids[guild.id][region] = initial_message.id
+
+        print(f"DEBUG: Created and stored initial message {initial_message.id} for {region} in guild {guild.id}")
 
     except Exception as e:
-        print(f"DEBUG: Error creating initial message for {region}: {e}")
+        print(f"DEBUG: Error creating initial message for {region} in guild {guild.id}: {e}")
 
 # === TASKS ===
 
