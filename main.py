@@ -2361,6 +2361,102 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
     except Exception as e:
         print(f"DEBUG: Error logging queue join: {e}")
 
+async def update_leaderboard(guild: discord.Guild):
+    """Update the tester leaderboard in the testing-leaderboard channel"""
+    if not is_guild_authorized(getattr(guild, "id", None)):
+        return
+
+    leaderboard_channel = discord.utils.get(guild.text_channels, name="🏅┃testing-leaderboard")
+    if not leaderboard_channel:
+        print("DEBUG: Leaderboard channel not found")
+        return
+
+    sorted_testers = sorted(tester_stats.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    embed = discord.Embed(
+        color=0x2f3136
+    )
+
+    embed.description = "## 🏆 **Top Testers Leaderboard**\n*Ranking of the most active testers*"
+
+    if not sorted_testers:
+        embed.add_field(
+            name="",
+            value="""
+```
+📊 RANKING
+
+⚠️  No tests performed yet
+```
+""",
+            inline=False
+        )
+    else:
+        leaderboard_text = """
+```
+📊 RANKING
+
+"""
+
+        for i, (tester_id, test_count) in enumerate(sorted_testers):
+            member = guild.get_member(tester_id)
+            if member:
+                rank_display = f"{i+1:2d}."
+                username = member.display_name[:20]
+                tests_display = f"{test_count} test{'s' if test_count > 1 else ''}"
+
+                leaderboard_text += f"{rank_display} {username:<20} {tests_display}\n"
+
+        leaderboard_text += "````"  # Close code block
+
+        embed.add_field(
+            name="",
+            value=leaderboard_text.replace("````", "```") ,
+            inline=False
+        )
+
+    embed.set_footer(
+        text=f"Last updated: {datetime.datetime.now().strftime('%m/%d/%Y at %H:%M')}",
+        icon_url="https://cdn.discordapp.com/emojis/1234567890123456789.png"
+    )
+
+    try:
+        existing_message = None
+        async for message in leaderboard_channel.history(limit=10):
+            if message.author == guild.me and message.embeds:
+                if "Top Testers Leaderboard" in str(message.embeds[0].description):
+                    existing_message = message
+                    break
+
+        if existing_message:
+            await existing_message.edit(embed=embed)
+            print("DEBUG: Updated existing leaderboard message")
+
+            message_count = 0
+            async for message in leaderboard_channel.history(limit=20):
+                if (message.author == guild.me and message.embeds and 
+                    message.id != existing_message.id and 
+                    "Top Testers Leaderboard" in str(message.embeds[0].description)):
+                    try:
+                        await message.delete()
+                        message_count += 1
+                        if message_count >= 3:
+                            break
+                    except:
+                        pass
+        else:
+            await leaderboard_channel.send(embed=embed)
+            print("DEBUG: Created new leaderboard message")
+
+    except Exception as e:
+        print(f"DEBUG: Error updating leaderboard: {e}")
+
+async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
+    """Send a 'Queue Position Updated' DM when a new user becomes #1 for a region.
+    Uses VerseTL branding and only triggers on changes to avoid duplicates."""
+    if not is_guild_authorized(getattr(guild, "id", None)):
+        return
+
     # Determine current #1
     top_list = waitlists.get(region, [])
     current_top_id = top_list[0] if top_list else None
