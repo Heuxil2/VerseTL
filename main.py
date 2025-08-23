@@ -131,6 +131,14 @@ def apply_cooldown(user_id: int, member: discord.Member):
     print(f"DEBUG: Applied {cooldown_days}-day cooldown for {role_type} user {member.name} (ID: {user_id}) until {cooldown_end}")
     return cooldown_days
 
+def has_tester_role(member: discord.Member) -> bool:
+    """Check if a member has any valid tester role"""
+    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester", "staff tester"]
+    
+    for role in member.roles:
+        if role.name in tester_role_names:
+            return True
+    return False
 
 def has_high_tier(member: discord.Member) -> bool:
     """Return True if member has a high tier role (HT3+ defined in HIGH_TIERS)."""
@@ -382,9 +390,6 @@ async def on_ready():
     waitlist_messages.clear()
     active_testing_sessions.clear()
     print("DEBUG: Cleared all opened queues, active testers, waitlists, message references, and active testing sessions on startup")
-
-    # Note: CommandTree.add_check is not available on all discord.py versions.
-    # The authorization gating is handled in on_interaction and inside each command.
 
     try:
         synced = await bot.tree.sync()
@@ -807,14 +812,7 @@ async def removecoodlown(interaction: discord.Interaction, member: discord.Membe
         return
 
     # Allow Testers or users with Manage Roles/Admin
-    tester_role = None
-    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester"]
-    for role in interaction.user.roles:
-        if role.name in tester_role_names:
-            tester_role = role
-            break
-
-    if not (tester_role or interaction.user.guild_permissions.manage_roles or interaction.user.guild_permissions.administrator):
+    if not (has_tester_role(interaction.user) or interaction.user.guild_permissions.manage_roles or interaction.user.guild_permissions.administrator):
         embed = discord.Embed(
             title="Permission Required",
             description="You must be a Tester or have the Manage Roles permission to use this command.",
@@ -861,16 +859,8 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     print(f"DEBUG: /startqueue called by {interaction.user.name} for channel {channel.name}")
 
-    # Check for multiple possible tester role names
-    tester_role = None
-    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester"]
-    
-    for role in interaction.user.roles:
-        if role.name in tester_role_names:
-            tester_role = role
-            break
-    
-    if not tester_role:
+    # Check if user has tester role using the helper function
+    if not has_tester_role(interaction.user):
         embed = discord.Embed(
             title="❌ Tester Role Required", 
             description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", 
@@ -932,16 +922,8 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
     if channel is None:
         channel = interaction.channel
 
-    # Check for multiple possible tester role names
-    tester_role = None
-    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester"]
-    
-    for role in interaction.user.roles:
-        if role.name in tester_role_names:
-            tester_role = role
-            break
-    
-    if not tester_role:
+    # Check if user has tester role using the helper function
+    if not has_tester_role(interaction.user):
         embed = discord.Embed(
             title="❌ Tester Role Required", 
             description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", 
@@ -1000,9 +982,8 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
     if channel is None:
         channel = interaction.channel
 
-    tester_role = discord.utils.get(interaction.user.roles, name="Tester")
-    if not tester_role:
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have the Tester role to use this command.", color=discord.Color.red())
+    if not has_tester_role(interaction.user):
+        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -1061,9 +1042,12 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         next_user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
     }
 
-    tester_role = discord.utils.get(interaction.guild.roles, name="Tester")
-    if tester_role:
-        overwrites[tester_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+    # Give access to all tester roles
+    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester", "staff tester"]
+    for role_name in tester_role_names:
+        tester_role = discord.utils.get(interaction.guild.roles, name=role_name)
+        if tester_role:
+            overwrites[tester_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
     try:
         new_channel = await interaction.guild.create_text_channel(
@@ -1128,16 +1112,8 @@ async def passeval(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    # Check for multiple possible tester role names
-    tester_role = None
-    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester"]
-    
-    for role in interaction.user.roles:
-        if role.name in tester_role_names:
-            tester_role = role
-            break
-    
-    if not tester_role:
+    # Check if user has tester role using the helper function
+    if not has_tester_role(interaction.user):
         embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -1196,16 +1172,8 @@ async def close(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    # Check for multiple possible tester role names
-    tester_role = None
-    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester"]
-    
-    for role in interaction.user.roles:
-        if role.name in tester_role_names:
-            tester_role = role
-            break
-    
-    if not tester_role:
+    # Check if user has tester role using the helper function
+    if not has_tester_role(interaction.user):
         embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -1294,16 +1262,8 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    # Check for multiple possible tester role names
-    tester_role = None
-    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester"]
-    
-    for role in interaction.user.roles:
-        if role.name in tester_role_names:
-            tester_role = role
-            break
-    
-    if not tester_role:
+    # Check if user has tester role using the helper function
+    if not has_tester_role(interaction.user):
         embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -2148,20 +2108,6 @@ class WaitlistModal(discord.ui.Modal):
         embed.set_footer(text="Only you can see this • Dismiss message")
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-def get_region_from_channel(channel_name: str):
-    print(f"DEBUG: get_region_from_channel called with: {channel_name}")
-    channel_lower = channel_name.lower()
-
-    for key in waitlists:
-        expected_name = f"waitlist-{key}"
-        print(f"DEBUG: Comparing '{channel_lower}' with '{expected_name}'")
-        if channel_lower == expected_name:
-            print(f"DEBUG: Found exact match for region: {key}")
-            return key
-
-    print(f"DEBUG: No region found for channel: {channel_name}")
-    return None
 
 async def update_waitlist_message(guild: discord.Guild, region: str):
     if not is_guild_authorized(getattr(guild, "id", None)):
