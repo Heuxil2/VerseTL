@@ -108,6 +108,38 @@ VERSE_LOGO_URL = os.getenv("VERSE_LOGO_URL") or "https://upnow-prod.ff45e40d1a1c
 # Track the current #1 we have already notified per region
 FIRST_IN_QUEUE_TRACKER = {"na": None, "eu": None, "as": None, "au": None}
 
+# Request channel configuration (robust lookup)
+REQUEST_CHANNEL_ID = os.getenv("REQUEST_CHANNEL_ID")  # optional: numeric channel ID
+REQUEST_CHANNEL_NAME = os.getenv("REQUEST_CHANNEL_NAME", "request-test")
+
+def _normalize_channel_name(name: str) -> str:
+    # Keep only alphanumeric chars to tolerate emojis, separators, spaces, dashes, etc.
+    return "".join(ch for ch in name.lower() if ch.isalnum())
+
+def _get_request_channel(guild: discord.Guild) -> discord.TextChannel | None:
+    # 1) by ID if provided
+    if REQUEST_CHANNEL_ID:
+        try:
+            ch = guild.get_channel(int(REQUEST_CHANNEL_ID))
+            if isinstance(ch, discord.TextChannel):
+                return ch
+        except Exception:
+            pass
+    # 2) by normalized name (tolerates “📨┃request-test”, “request test”, “request-test”, etc.)
+    target = _normalize_channel_name(REQUEST_CHANNEL_NAME)
+    for ch in guild.text_channels:
+        if _normalize_channel_name(ch.name) == target or _normalize_channel_name(ch.name) in {"requesttest", "request"}:
+            return ch
+    return None
+
+def _is_request_channel(channel: discord.abc.GuildChannel) -> bool:
+    if REQUEST_CHANNEL_ID:
+        try:
+            return channel.id == int(REQUEST_CHANNEL_ID)
+        except Exception:
+            pass
+    return _normalize_channel_name(channel.name) == _normalize_channel_name(REQUEST_CHANNEL_NAME)
+
 def has_booster_role(member: discord.Member) -> bool:
     """Check if a member has the Booster role"""
     booster_role = discord.utils.get(member.roles, name="Booster")
@@ -417,7 +449,16 @@ async def on_ready():
             print(f"DEBUG: Skipping setup for unauthorized guild {guild.id}")
             continue
 
-        request_channel = discord.utils.get(guild.text_channels, name="📨┃request-test")
+        # Robust lookup (by ID or normalized name) and auto-create if missing
+        request_channel = _get_request_channel(guild)
+        if not request_channel:
+            try:
+                request_channel = await guild.create_text_channel(REQUEST_CHANNEL_NAME)
+                print(f"DEBUG: Created request channel #{request_channel.name} in {guild.name}")
+            except discord.Forbidden:
+                print(f"DEBUG: Missing permission to create request channel in {guild.name}")
+                request_channel = None
+
         if request_channel:
             embed = discord.Embed(
                 title="📋 Evaluation Testing Waitlist",
@@ -429,8 +470,9 @@ async def on_ready():
                     "• Username should be the name of the account you will be testing on\n\n"
                     "**🛑 Failure to provide authentic information will result in a denied test.**\n\n"
                 ),
-                color=discord.Color.red())
-            view = discord.ui.View()
+                color=discord.Color.red()
+            )
+            view = discord.ui.View(timeout=None)
             view.add_item(
                 discord.ui.Button(label="Enter Waitlist",
                                   style=discord.ButtonStyle.success,
@@ -672,7 +714,8 @@ async def on_interaction(interaction: discord.Interaction):
         custom_id = interaction.data["custom_id"]
 
         if custom_id == "open_form":
-            if interaction.channel.name == "📨┃request-test":
+            # Use robust channel check instead of exact name
+            if _is_request_channel(interaction.channel):
                 modal = WaitlistModal()
                 await interaction.response.send_modal(modal)
                 return
@@ -1024,7 +1067,7 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
 
     # Fallback to regular Eval if High Eval does not exist
     if not category and target_high:
-        fallback_name = f"Eval {region.upper()}"
+        fallback_name = f"Eval {region.UPPER()}" if False else f"Eval {region.upper()}"
         category = discord.utils.get(interaction.guild.categories, name=fallback_name)
         if category:
             print(f"DEBUG: High Eval category not found for {region.upper()}, falling back to {fallback_name}")
@@ -2093,7 +2136,7 @@ class WaitlistModal(discord.ui.Modal):
 
         matchmaking_role = discord.utils.get(
             interaction.guild.roles,
-            name=f"{region_input.upper()} Matchmaking")
+            name=f"{region_input.UPPER()}" if False else f"{region_input.upper()} Matchmaking")
         if matchmaking_role and matchmaking_role < interaction.guild.me.top_role:
             try:
                 await interaction.user.add_roles(matchmaking_role)
