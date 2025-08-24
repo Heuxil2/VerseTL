@@ -1,17 +1,24 @@
+# Standard library
+import os
+import json
+import asyncio
+import datetime as dt
+from io import BytesIO
+
+# Discord
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import asyncio
-import os
-import json
-import datetime
+
+# Env/hosting
 from dotenv import load_dotenv
 from keep_alive import keep_alive
-import google.auth
+
+# Google APIs (garde seulement si tu les utilises)
+# import google.auth  # <= seulement si nécessaire
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import googleapiclient.errors
-
 # ============ CONFIG & AUTHORIZATION ============
 
 load_dotenv()
@@ -22,6 +29,103 @@ GUILD_ID = int(os.getenv("GUILD_ID", "0")) if os.getenv("GUILD_ID") else None
 OWNER_ID = 836452038548127764  # Heuxil
 AUTHORIZED_FILE = "authorized_guilds.json"
 authorized_guilds = set()
+
+# ====== Tiers builder (dedupe across 2 guilds; highest role wins) ======
+# Priority: HT1 > LT1 > HT2 > LT2 > HT3 > LT3 > HT4 > LT4 > HT5 > LT5
+# Display buckets remain Tier 1..5 (HTx/LTx collapse to Tier x)
+
+def _split_ids(env_value: str | None):
+    if not env_value:
+        return []
+    return [s.strip() for s in env_value.split(",") if s.strip()]
+
+def _role_id_ranks_from_env():
+    """
+    role_id (str) -> (rank, display_tier)
+    Accepte des listes d'IDs séparées par des virgules pour chaque tier,
+    afin d'inclure les IDs des rôles de tes deux serveurs.
+    Priorité (rank croissant = plus haut): HT1(1) > LT1(2) > HT2(3) > LT2(4) > HT3(5) > LT3(6) > HT4(7) > LT4(8) > HT5(9) > LT5(10)
+    """
+    # On regarde d'abord la forme PLURIELLE *_ROLE_IDS, puis la forme singulière *_ROLE_ID
+    def get_ids(plural_key, singular_key):
+        v = os.getenv(plural_key) or os.getenv(singular_key)
+        return _split_ids(v)
+
+    entries = [
+        ("HT1_ROLE_IDS", "HT1_ROLE_ID", 1, 1),
+        ("LT1_ROLE_IDS", "LT1_ROLE_ID", 2, 1),
+        ("HT2_ROLE_IDS", "HT2_ROLE_ID", 3, 2),
+        ("LT2_ROLE_IDS", "LT2_ROLE_ID", 4, 2),
+        ("HT3_ROLE_IDS", "HT3_ROLE_ID", 5, 3),
+        ("LT3_ROLE_IDS", "LT3_ROLE_ID", 6, 3),
+        ("HT4_ROLE_IDS", "HT4_ROLE_ID", 7, 4),
+        ("LT4_ROLE_IDS", "LT4_ROLE_ID", 8, 4),
+        ("HT5_ROLE_IDS", "HT5_ROLE_ID", 9, 5),
+        ("LT5_ROLE_IDS", "LT5_ROLE_ID", 10, 5),
+    ]
+
+    mapping = {}
+    for plural, singular, rank, disp in entries:
+        for rid in get_ids(plural, singular):
+            mapping[str(rid)] = (rank, disp)
+    return mapping
+
+ROLE_ID_RANKS = _role_id_ranks_from_env()
+
+NAME_RANKS = {
+    "HT1": (1,1), "LT1": (2,1),
+    "HT2": (3,2), "LT2": (4,2),
+    "HT3": (5,3), "LT3": (6,3),
+    "HT4": (7,4), "LT4": (8,4),
+    "HT5": (9,5), "LT5": (10,5),
+}
+def _normalize_role_name(n: str) -> str:
+    return (n or "").strip().upper().replace("-", "").replace("_", "").replace(" ", "")
+
+def _pick_display_name(m: discord.Member) -> str:
+    return getattr(m, "nick", None) or getattr(m, "global_name", None) or m.name
+
+def _member_best_rank(member: discord.Member):
+    best = None  # (rank, display_tier)
+    if ROLE_ID_RANKS:
+        ids = {str(r.id) for r in member.roles}
+        for rid in ids:
+            if rid in ROLE_ID_RANKS:
+                rnk = ROLE_ID_RANKS[rid]
+                if (best is None) or (rnk[0] < best[0]):
+                    best = rnk
+    if best is None:
+        for r in member.roles:
+            key = _normalize_role_name(r.name)
+            if key in NAME_RANKS:
+                rnk = NAME_RANKS[key]
+                if (best is None) or (rnk[0] < best[0]):
+                    best = rnk
+    return best  # (rank, display_tier)
+
+async def build_tiers(bot: commands.Bot) -> dict:
+    guild_ids = _env_guild_ids()
+    if not guild_ids:
+        raise RuntimeError("No GUILD_ID_1/GUILD_ID_2 (or GUILD_ID) configured")
+
+    users = {}  # user_id -> {"name": str, "rank": int, "display_tier": int}
+    for gid in guild_ids:
+        guild = bot.get_guild(gid) or await bot.fetch_guild(gid)
+        async for m in guild.fetch_members(limit=None):
+            best = _member_best_rank(m)
+            if best is None:
+                continue
+            rank, disp = best
+            cur = users.get(m.id)
+            if (cur is None) or (rank < cur["rank"]):
+                users[m.id] = {"name": _pick_display_name(m), "rank": rank, "display_tier": disp}
+
+    result = {f"tier{i}": [] for i in range(1, 6)}
+    for data in users.values():
+        result[f"tier{data['display_tier']}"].append(data["name"])
+    for arr in result.values():
+        arr.sort(key=lambda s: s.lower())
+    return result
 
 def load_authorized_guilds():
     global authorized_guilds
@@ -1996,6 +2100,20 @@ async def commands_list(interaction: discord.Interaction):
 """, inline=False)
 
     await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="buildtiers", description="Build tiers (HT/LT priority) across both guilds; dedupe; export vanilla.json")
+async def buildtiers_cmd(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    try:
+        tiers = await build_tiers(bot)
+        payload = json.dumps(tiers, indent=2).encode("utf-8")
+        await interaction.followup.send(
+            content="Here is your `vanilla.json` (HT/LT priority applied; deduped across guilds).",
+            file=discord.File(BytesIO(payload), filename="vanilla.json"),
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.followup.send(f"Error while building tiers: `{e}`", ephemeral=True)
 
 # === HELPER FUNCTIONS ===
 
