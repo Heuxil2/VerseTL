@@ -3,7 +3,7 @@ import json
 from flask import Flask, make_response
 from threading import Thread
 
-app = Flask(name)
+app = Flask(__name__)
 
 # Callback fournie par main.py pour lire le cache vanilla
 _vanilla_callback = None
