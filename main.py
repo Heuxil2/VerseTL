@@ -5,21 +5,31 @@ import asyncio
 import datetime as dt
 from io import BytesIO
 import datetime
+import time
+import random
+
 # Discord
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import time, random
 from discord.errors import HTTPException
+
 # Env/hosting
 from dotenv import load_dotenv
 from keep_alive import keep_alive
 
-# Google APIs (garde seulement si tu les utilises)
-# import google.auth  # <= seulement si nécessaire
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-import googleapiclient.errors
+# Google APIs (optionnels)
+try:
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+except Exception:
+    service_account = None
+    build = None
+
+    class HttpError(Exception):
+        pass
+
 # ============ CONFIG & AUTHORIZATION ============
 
 load_dotenv()
@@ -30,6 +40,27 @@ GUILD_ID = int(os.getenv("GUILD_ID", "0")) if os.getenv("GUILD_ID") else None
 OWNER_ID = 836452038548127764  # Heuxil
 AUTHORIZED_FILE = "authorized_guilds.json"
 authorized_guilds = set()
+APP_CHECK_ADDED = False  # pour n’ajouter le check global qu’une seule fois
+
+def _env_guild_ids():
+    """
+    Récupère les Guild IDs à scanner pour build_tiers.
+    GUILD_ID_1 / GUILD_ID_2 (prioritaires), sinon GUILD_ID.
+    """
+    ids = []
+    for key in ("GUILD_ID_1", "GUILD_ID_2"):
+        v = os.getenv(key)
+        if v:
+            try:
+                ids.append(int(v))
+            except ValueError:
+                pass
+    if not ids and GUILD_ID:
+        try:
+            ids.append(int(GUILD_ID))
+        except ValueError:
+            pass
+    return ids
 
 # ====== Tiers builder (dedupe across 2 guilds; highest role wins) ======
 # Priority: HT1 > LT1 > HT2 > LT2 > HT3 > LT3 > HT4 > LT4 > HT5 > LT5
@@ -47,7 +78,6 @@ def _role_id_ranks_from_env():
     afin d'inclure les IDs des rôles de tes deux serveurs.
     Priorité (rank croissant = plus haut): HT1(1) > LT1(2) > HT2(3) > LT2(4) > HT3(5) > LT3(6) > HT4(7) > LT4(8) > HT5(9) > LT5(10)
     """
-    # On regarde d'abord la forme PLURIELLE *_ROLE_IDS, puis la forme singulière *_ROLE_ID
     def get_ids(plural_key, singular_key):
         v = os.getenv(plural_key) or os.getenv(singular_key)
         return _split_ids(v)
@@ -80,6 +110,7 @@ NAME_RANKS = {
     "HT4": (7,4), "LT4": (8,4),
     "HT5": (9,5), "LT5": (10,5),
 }
+
 def _normalize_role_name(n: str) -> str:
     return (n or "").strip().upper().replace("-", "").replace("_", "").replace(" ", "")
 
@@ -168,18 +199,18 @@ message_logs = {}
 # Waitlist system variables
 waitlists = {"na": [], "eu": [], "as": [], "au": []}
 MAX_WAITLIST = 20
-waitlist_message_ids = {}  # Store message IDs for each region
-waitlist_messages = {}  # Store actual message objects for each region
+waitlist_message_ids = {}  # Store message IDs for each region (per guild)
+waitlist_messages = {}  # Store actual message objects for each region (per guild)
 opened_queues = set()
 active_testers = {"na": [], "eu": [], "as": [], "au": []}  # Track active testers per region
-user_info = {}  # Store user form information {user_id: {"ign": str, "server": str, "region": str}}
-last_test_session = datetime.datetime.now()  # Initialize with current time instead of None
-last_region_activity = {"na": None, "eu": None, "as": None, "au": None}  # Track last activity per region
-tester_stats = {}  # Track test counts for each tester {user_id: test_count}
-STATS_FILE = "tester_stats.json"  # File to persist tester statistics
-user_test_cooldowns = {}  # Store cooldown timestamps for users {user_id: datetime}
-COOLDOWNS_FILE = "user_cooldowns.json"  # Persist cooldowns
-LAST_ACTIVITY_FILE = "last_region_activity.json"  # Persist last activities
+user_info = {}  # {user_id: {"ign": str, "server": str, "region": str}}
+last_test_session = datetime.datetime.now()
+last_region_activity = {"na": None, "eu": None, "as": None, "au": None}
+tester_stats = {}  # {user_id: test_count}
+STATS_FILE = "tester_stats.json"
+user_test_cooldowns = {}  # {user_id: datetime}
+COOLDOWNS_FILE = "user_cooldowns.json"
+LAST_ACTIVITY_FILE = "last_region_activity.json"
 
 # Track active testing sessions to prevent duplicates
 active_testing_sessions = {}  # {user_id: channel_id}
@@ -230,7 +261,7 @@ def _get_request_channel(guild: discord.Guild) -> discord.TextChannel | None:
                 return ch
         except Exception:
             pass
-    # 2) by normalized name (tolerates “📨┃request-test”, “request test”, “request-test”, etc.)
+    # 2) by normalized name (tolerates variations)
     target = _normalize_channel_name(REQUEST_CHANNEL_NAME)
     for ch in guild.text_channels:
         if _normalize_channel_name(ch.name) == target or _normalize_channel_name(ch.name) in {"requesttest", "request"}:
@@ -246,19 +277,13 @@ def _is_request_channel(channel: discord.abc.GuildChannel) -> bool:
     return _normalize_channel_name(channel.name) == _normalize_channel_name(REQUEST_CHANNEL_NAME)
 
 def has_booster_role(member: discord.Member) -> bool:
-    """Check if a member has the Booster role"""
     booster_role = discord.utils.get(member.roles, name="Booster")
     return booster_role is not None
 
 def get_cooldown_duration(member: discord.Member) -> int:
-    """Get the appropriate cooldown duration based on user roles"""
-    if has_booster_role(member):
-        return BOOSTER_COOLDOWN_DAYS
-    else:
-        return REGULAR_COOLDOWN_DAYS
+    return BOOSTER_COOLDOWN_DAYS if has_booster_role(member) else REGULAR_COOLDOWN_DAYS
 
 def apply_cooldown(user_id: int, member: discord.Member):
-    """Apply cooldown with appropriate duration based on user roles"""
     cooldown_days = get_cooldown_duration(member)
     cooldown_end = datetime.datetime.now() + datetime.timedelta(days=cooldown_days)
     user_test_cooldowns[user_id] = cooldown_end
@@ -269,16 +294,13 @@ def apply_cooldown(user_id: int, member: discord.Member):
     return cooldown_days
 
 def has_tester_role(member: discord.Member) -> bool:
-    """Check if a member has any valid tester role"""
     tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester", "staff tester"]
-    
     for role in member.roles:
         if role.name in tester_role_names:
             return True
     return False
 
 def has_high_tier(member: discord.Member) -> bool:
-    """Return True if member has a high tier role (HT3+ defined in HIGH_TIERS)."""
     try:
         for tier_name in HIGH_TIERS:
             role = discord.utils.get(member.roles, name=tier_name)
@@ -289,7 +311,6 @@ def has_high_tier(member: discord.Member) -> bool:
     return False
 
 def save_tester_stats():
-    """Save tester statistics to JSON file"""
     try:
         with open(STATS_FILE, 'w') as f:
             json.dump(tester_stats, f, indent=2)
@@ -298,7 +319,6 @@ def save_tester_stats():
         print(f"DEBUG: Error saving tester stats: {e}")
 
 def load_tester_stats():
-    """Load tester statistics from JSON file"""
     global tester_stats
     try:
         if os.path.exists(STATS_FILE):
@@ -314,7 +334,6 @@ def load_tester_stats():
         tester_stats = {}
 
 def save_user_cooldowns():
-    """Save user cooldowns to JSON file"""
     try:
         cooldowns_data = {}
         for user_id, cooldown_time in user_test_cooldowns.items():
@@ -327,7 +346,6 @@ def save_user_cooldowns():
         print(f"DEBUG: Error saving user cooldowns: {e}")
 
 def load_user_cooldowns():
-    """Load user cooldowns from JSON file"""
     global user_test_cooldowns
     try:
         if os.path.exists(COOLDOWNS_FILE):
@@ -363,14 +381,10 @@ def load_user_cooldowns():
         user_test_cooldowns = {}
 
 def save_last_region_activity():
-    """Save last region activity to JSON file"""
     try:
         activity_data = {}
         for region, last_time in last_region_activity.items():
-            if last_time is not None:
-                activity_data[region] = last_time.isoformat()
-            else:
-                activity_data[region] = None
+            activity_data[region] = last_time.isoformat() if last_time is not None else None
 
         with open(LAST_ACTIVITY_FILE, 'w') as f:
             json.dump(activity_data, f, indent=2)
@@ -379,14 +393,13 @@ def save_last_region_activity():
         print(f"DEBUG: Error saving last region activities: {e}")
 
 def load_last_region_activity():
-    """Load last region activity from JSON file"""
     global last_region_activity
     try:
         if os.path.exists(LAST_ACTIVITY_FILE):
             with open(LAST_ACTIVITY_FILE, 'r') as f:
                 loaded_activities = json.load(f)
 
-            for region in last_region_activity.keys():
+            for region in list(last_region_activity.keys()):
                 if region in loaded_activities and loaded_activities[region] is not None:
                     try:
                         last_region_activity[region] = datetime.datetime.fromisoformat(loaded_activities[region])
@@ -407,6 +420,8 @@ def load_last_region_activity():
 def get_sheets_service():
     """Get Google Sheets service using service account credentials"""
     try:
+        if not service_account or not build:
+            return None
         creds_json = os.getenv('GOOGLE_SERVICE_ACCOUNT_CREDENTIALS')
         if creds_json:
             creds_info = json.loads(creds_json)
@@ -454,7 +469,7 @@ async def add_ign_to_sheet(ign: str, tier: str):
         print(f"DEBUG: Successfully added {ign} to {tier} column at row {next_row}")
         return True
 
-    except googleapiclient.errors.HttpError as e:
+    except HttpError as e:
         print(f"DEBUG: Google Sheets API error: {e}")
         return False
     except Exception as e:
@@ -488,14 +503,6 @@ def run_with_backoff():
                 base = min(int(base * 1.5), 3600)  # augmente jusqu'à 1h max
                 continue
             raise  # autres erreurs: on laisse remonter pour les voir
-
-if __name__ == "__main__":
-    # keep_alive() si vraiment nécessaire; sur Render, souvent inutile.
-    try:
-        keep_alive()
-    except Exception as _:
-        pass
-    run_with_backoff()
 
 # ============ GLOBAL CHECK FOR SLASH COMMANDS ============
 
@@ -550,6 +557,16 @@ async def on_ready():
     waitlist_messages.clear()
     active_testing_sessions.clear()
     print("DEBUG: Cleared all opened queues, active testers, waitlists, message references, and active testing sessions on startup")
+
+    # Register global check once
+    global APP_CHECK_ADDED
+    if not APP_CHECK_ADDED:
+        try:
+            bot.tree.add_check(global_app_check)
+            APP_CHECK_ADDED = True
+            print("DEBUG: Registered global app command check")
+        except Exception as e:
+            print(f"DEBUG: Failed to add global app check: {e}")
 
     try:
         synced = await bot.tree.sync()
@@ -974,7 +991,7 @@ async def leave(interaction: discord.Interaction):
         embed = discord.Embed(title="ℹ️ Not in Queue", description="You are not in any waitlist.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="removecoodlown", description="Remove a user's cooldown before testing")
+@bot.tree.command(name="removecooldown", description="Remove a user's cooldown before testing")
 @app_commands.describe(member="Member to clear cooldown for")
 async def removecooldown(interaction: discord.Interaction, member: discord.Member):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
@@ -1028,7 +1045,6 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     print(f"DEBUG: /startqueue called by {interaction.user.name} for channel {channel.name}")
 
-    # Check if user has tester role using the helper function
     if not has_tester_role(interaction.user):
         embed = discord.Embed(
             title="❌ Tester Role Required", 
@@ -1077,9 +1093,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     print(f"DEBUG: Successfully started queue for {region}")
 
-    # Notify the current #1 that they are first in the queue
     await maybe_notify_queue_top_change(interaction.guild, region)
-    
     await update_waitlist_message(interaction.guild, region)
 
 @bot.tree.command(name="stopqueue", description="Remove yourself from active testers (Tester role required)")
@@ -1091,7 +1105,6 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
     if channel is None:
         channel = interaction.channel
 
-    # Check if user has tester role using the helper function
     if not has_tester_role(interaction.user):
         embed = discord.Embed(
             title="❌ Tester Role Required", 
@@ -1114,12 +1127,10 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # Remove user from active testers
     if interaction.user.id in active_testers[region]:
         active_testers[region].remove(interaction.user.id)
         print(f"DEBUG: Removed user {interaction.user.name} from active testers for {region}")
 
-        # If no more active testers, close the queue
         if not active_testers[region]:
             opened_queues.discard(region)
             print(f"DEBUG: No more active testers for {region}, removed from opened_queues")
@@ -1193,7 +1204,7 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
 
     # Fallback to regular Eval if High Eval does not exist
     if not category and target_high:
-        fallback_name = f"Eval {region.UPPER()}" if False else f"Eval {region.upper()}"
+        fallback_name = f"Eval {region.upper()}"
         category = discord.utils.get(interaction.guild.categories, name=fallback_name)
         if category:
             print(f"DEBUG: High Eval category not found for {region.upper()}, falling back to {fallback_name}")
@@ -1281,7 +1292,6 @@ async def passeval(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    # Check if user has tester role using the helper function
     if not has_tester_role(interaction.user):
         embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1341,7 +1351,6 @@ async def close(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    # Check if user has tester role using the helper function
     if not has_tester_role(interaction.user):
         embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1371,7 +1380,6 @@ async def close(interaction: discord.Interaction):
         )
 
         await interaction.response.send_message(embed=embed)
-
         await asyncio.sleep(5)
         await interaction.channel.delete(reason=f"Eval channel closed by {interaction.user.name}")
 
@@ -1431,7 +1439,6 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    # Check if user has tester role using the helper function
     if not has_tester_role(interaction.user):
         embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -2145,13 +2152,10 @@ def get_region_from_channel(channel_name: str) -> str:
     """Extract region from channel name"""
     print(f"DEBUG: get_region_from_channel called with: {channel_name}")
     channel_lower = channel_name.lower()
-    
-    # Check for waitlist channels like "waitlist-na", "waitlist-eu", etc.
     for region in ["na", "eu", "as", "au"]:
         if f"waitlist-{region}" in channel_lower:
             print(f"DEBUG: Found region {region} in channel {channel_name}")
             return region
-    
     print(f"DEBUG: No region found for channel: {channel_name}")
     return None
 
@@ -2276,7 +2280,7 @@ class WaitlistModal(discord.ui.Modal):
 
         matchmaking_role = discord.utils.get(
             interaction.guild.roles,
-            name=f"{region_input.UPPER()}" if False else f"{region_input.upper()} Matchmaking")
+            name=f"{region_input.upper()} Matchmaking")
         if matchmaking_role and matchmaking_role < interaction.guild.me.top_role:
             try:
                 await interaction.user.add_roles(matchmaking_role)
@@ -2304,7 +2308,6 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         print(f"DEBUG: Channel waitlist-{region} not found")
         return
 
-    # Ensure per-guild message storage
     if guild.id not in waitlist_messages:
         waitlist_messages[guild.id] = {}
     if guild.id not in waitlist_message_ids:
@@ -2324,7 +2327,6 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         [f"{i+1}. <@{uid}>"
          for i, uid in enumerate(tester_ids)]) or "*No testers online*"
 
-    # Notify on top-of-queue change
     await maybe_notify_queue_top_change(guild, region)
 
     region_last_active = last_region_activity.get(region)
@@ -2370,7 +2372,6 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
                               custom_id="open_form"))
 
     try:
-        # Read per-guild caches
         guild_msgs = waitlist_messages[guild.id]
         guild_msg_ids = waitlist_message_ids[guild.id]
 
@@ -2492,20 +2493,16 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
         print(f"DEBUG: Error logging queue join: {e}")
 
 async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
-    """Send a 'Queue Position Updated' DM when a new user becomes #1 for a region.
-    Uses VerseTL branding and only triggers on changes to avoid duplicates."""
+    """Send a 'Queue Position Updated' DM when a new user becomes #1 for a region."""
     if not is_guild_authorized(getattr(guild, "id", None)):
         return
 
-    # Determine current #1
     top_list = waitlists.get(region, [])
     current_top_id = top_list[0] if top_list else None
 
-    # No change → no DM
     if FIRST_IN_QUEUE_TRACKER.get(region) == current_top_id:
         return
 
-    # Update tracker early to prevent double-sends
     FIRST_IN_QUEUE_TRACKER[region] = current_top_id
 
     if current_top_id is None:
@@ -2529,7 +2526,6 @@ async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
     except Exception as e:
         print(f"DEBUG: Error sending top-of-queue DM: {e}")
 
-# Backwards-compat wrapper (kept if other parts still call it)
 async def notify_first_in_queue(guild: discord.Guild, region: str, tester: discord.Member):
     await maybe_notify_queue_top_change(guild, region)
 
@@ -2590,7 +2586,6 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
     try:
         initial_message = await channel.send(embed=embed)
 
-        # Ensure per-guild storage and record
         if guild.id not in waitlist_messages:
             waitlist_messages[guild.id] = {}
         if guild.id not in waitlist_message_ids:
@@ -2603,6 +2598,36 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
 
     except Exception as e:
         print(f"DEBUG: Error creating initial message for {region} in guild {guild.id}: {e}")
+
+async def update_leaderboard(guild: discord.Guild):
+    """Update a simple tester leaderboard if a suitable channel exists."""
+    try:
+        if not tester_stats:
+            return
+        channel = (discord.utils.get(guild.text_channels, name="🏆┃leaderboard")
+                   or discord.utils.get(guild.text_channels, name="leaderboard"))
+        if not channel:
+            print("DEBUG: Leaderboard channel not found; skipping update")
+            return
+
+        top = sorted(tester_stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        lines = []
+        for idx, (uid, count) in enumerate(top, 1):
+            member = guild.get_member(uid)
+            display = member.display_name if member else f"User {uid}"
+            lines.append(f"{idx}. {display} — {count} test(s)")
+
+        embed = discord.Embed(title="Tester Leaderboard", description="\n".join(lines) or "*No data*", color=discord.Color.gold())
+
+        # Try to edit the last leaderboard embed; otherwise send a new one
+        async for msg in channel.history(limit=20):
+            if msg.author == guild.me and msg.embeds and (msg.embeds[0].title or "") == "Tester Leaderboard":
+                await msg.edit(embed=embed)
+                break
+        else:
+            await channel.send(embed=embed)
+    except Exception as e:
+        print(f"DEBUG: update_leaderboard error: {e}")
 
 # === TASKS ===
 
@@ -2628,7 +2653,7 @@ async def cleanup_expired_cooldowns():
     current_time = datetime.datetime.now()
     expired_users = []
 
-    for user_id, cooldown_time in user_test_cooldowns.items():
+    for user_id, cooldown_time in list(user_test_cooldowns.items()):
         if cooldown_time <= current_time:
             expired_users.append(user_id)
 
@@ -2647,5 +2672,11 @@ async def periodic_save_activities():
 
 # === RUN BOT ===
 
-keep_alive()
-bot.run(TOKEN)
+if __name__ == "__main__":
+    if not TOKEN:
+        raise RuntimeError("TOKEN manquant: définis la variable d'environnement TOKEN.")
+    try:
+        keep_alive()
+    except Exception:
+        pass
+    run_with_backoff()
