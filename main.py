@@ -31,29 +31,6 @@ OWNER_ID = 836452038548127764  # Heuxil
 AUTHORIZED_FILE = "authorized_guilds.json"
 authorized_guilds = set()
 
-def run_with_backoff():
-    base = 600  # 10 minutes; Cloudflare 1015 aime bien un cooldown long
-    while True:
-        try:
-            bot.run(TOKEN, reconnect=True)
-            break  # sortie propre quand le bot se ferme volontairement
-        except HTTPException as e:
-            if getattr(e, "status", None) == 429:
-                delay = base + random.randint(30, 120)
-                print(f"[WARN] Rate limited (429/1015). Sleeping {delay}s before retry.")
-                time.sleep(delay)
-                base = min(int(base * 1.5), 3600)  # augmente jusqu'à 1h max
-                continue
-            raise  # autres erreurs: on laisse remonter pour les voir
-
-if __name__ == "__main__":
-    # keep_alive() si vraiment nécessaire; sur Render, souvent inutile.
-    try:
-        keep_alive()
-    except Exception as _:
-        pass
-    run_with_backoff()
-
 # ====== Tiers builder (dedupe across 2 guilds; highest role wins) ======
 # Priority: HT1 > LT1 > HT2 > LT2 > HT3 > LT3 > HT4 > LT4 > HT5 > LT5
 # Display buckets remain Tier 1..5 (HTx/LTx collapse to Tier x)
