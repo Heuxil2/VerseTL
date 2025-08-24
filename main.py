@@ -208,6 +208,29 @@ STATS_FILE = "tester_stats.json"
 user_test_cooldowns = {}  # {user_id: datetime}
 COOLDOWNS_FILE = "user_cooldowns.json"
 LAST_ACTIVITY_FILE = "last_region_activity.json"
+VANILLA_CACHE = {"updated_at": None, "tiers": {f"tier{i}": [] for i in range(1, 6)}}
+
+async def rebuild_and_cache_vanilla():
+    """Reconstruit le JSON tiers et le met en cache pour l’export web."""
+    global VANILLA_CACHE
+    tiers = await build_tiers(bot)
+    VANILLA_CACHE = {
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "tiers": tiers,
+    }
+    total = sum(len(v) for v in tiers.values())
+    print(f"DEBUG: Rebuilt vanilla cache with {total} users")
+
+@tasks.loop(minutes=10)  # ajuste si tu veux
+async def refresh_vanilla_export():
+    try:
+        await rebuild_and_cache_vanilla()
+    except Exception as e:
+        print(f"DEBUG: refresh_vanilla_export failed: {e}")
+
+def _vanilla_payload():
+    # Exposé via /vanilla.json (keep_alive)
+    return VANILLA_CACHE
 
 # Track active testing sessions to prevent duplicates
 active_testing_sessions = {}  # {user_id: channel_id}
