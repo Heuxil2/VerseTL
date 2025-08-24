@@ -1,31 +1,40 @@
-# keep_alive.py
 import os
+import json
+from flask import Flask, make_response
 from threading import Thread
-from flask import Flask, jsonify, make_response
 
-_app = Flask(__name__)
-_TIERS_PROVIDER = lambda: {"tier1": [], "tier2": [], "tier3": [], "tier4": [], "tier5": []}
+app = Flask(name)
 
-def set_tiers_provider(fn):
-    """main.py nous passe une fonction qui renvoie le dernier JSON tiers."""
-    global _TIERS_PROVIDER
-    _TIERS_PROVIDER = fn
+Callback fournie par main.py pour lire le cache vanilla
+_vanilla_callback = None
 
-@_app.route("/")
-def root():
-    return "OK"
+@app.route("/")
+def home():
+    return "ok"
 
-@_app.route("/tiers.json")
-def tiers_json():
-    data = _TIERS_PROVIDER()
-    resp = make_response(jsonify(data))
+@app.route("/health")
+def health():
+    return "ok"
+
+@app.route("/vanilla.json")
+def vanilla():
+    try:
+        payload = _vanilla_callback() if callable(_vanilla_callback) else {}
+    except Exception as e:
+        payload = {"error": str(e)}
+    resp = make_response(json.dumps(payload), 200)
+    resp.headers["Content-Type"] = "application/json"
     resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
     return resp
 
+def register_vanilla_callback(fn):
+    global _vanilla_callback
+    _vanilla_callback = fn
+
 def _run():
-    port = int(os.getenv("PORT", "10000"))
-    _app.run(host="0.0.0.0", port=port)
+    port = int(os.getenv("PORT", "8080"))
+    app.run(host="0.0.0.0", port=port)
 
 def keep_alive():
     Thread(target=_run, daemon=True).start()
