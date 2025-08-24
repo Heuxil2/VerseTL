@@ -499,8 +499,6 @@ async def on_ready():
                 opened_queues.discard(region)
                 await create_initial_waitlist_message(guild, region)
 
-        await update_leaderboard(guild)
-
     if not refresh_messages.is_running():
         refresh_messages.start()
         print("DEBUG: Started refresh_messages task")
