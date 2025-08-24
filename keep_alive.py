@@ -5,7 +5,7 @@ from threading import Thread
 
 app = Flask(name)
 
-Callback fournie par main.py pour lire le cache vanilla
+# Callback fournie par main.py pour lire le cache vanilla
 _vanilla_callback = None
 
 @app.route("/")
