@@ -16,7 +16,7 @@ from discord.errors import HTTPException
 
 # Env/hosting
 from dotenv import load_dotenv
-from keep_alive import keep_alive
+from keep_alive import keep_alive, register_vanilla_callback
 
 # Google APIs (optionnels)
 try:
@@ -117,7 +117,6 @@ def _normalize_role_name(n: str) -> str:
 def _pick_display_name(m: discord.Member) -> str:
     return getattr(m, "nick", None) or getattr(m, "global_name", None) or m.name
 
-Remplace par (username seul):
 def _pick_display_name(m: discord.Member) -> str:
     return m.name
 
