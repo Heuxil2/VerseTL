@@ -474,6 +474,29 @@ async def update_user_count_channel(guild):
         category = discord.utils.get(guild.categories, name="Voice")
         await guild.create_voice_channel(new_name, category=category)
 
+def run_with_backoff():
+    base = 600  # 10 minutes; Cloudflare 1015 aime bien un cooldown long
+    while True:
+        try:
+            bot.run(TOKEN, reconnect=True)
+            break  # sortie propre quand le bot se ferme volontairement
+        except HTTPException as e:
+            if getattr(e, "status", None) == 429:
+                delay = base + random.randint(30, 120)
+                print(f"[WARN] Rate limited (429/1015). Sleeping {delay}s before retry.")
+                time.sleep(delay)
+                base = min(int(base * 1.5), 3600)  # augmente jusqu'à 1h max
+                continue
+            raise  # autres erreurs: on laisse remonter pour les voir
+
+if __name__ == "__main__":
+    # keep_alive() si vraiment nécessaire; sur Render, souvent inutile.
+    try:
+        keep_alive()
+    except Exception as _:
+        pass
+    run_with_backoff()
+
 # ============ GLOBAL CHECK FOR SLASH COMMANDS ============
 
 async def global_app_check(interaction: discord.Interaction) -> bool:
