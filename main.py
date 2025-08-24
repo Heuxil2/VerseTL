@@ -117,16 +117,14 @@ def _normalize_role_name(n: str) -> str:
 def _pick_display_name(m: discord.Member) -> str:
     return getattr(m, "nick", None) or getattr(m, "global_name", None) or m.name
 
-def _member_best_rank(member: discord.Member):
-    best = None  # (rank, display_tier)
-    if ROLE_ID_RANKS:
-        ids = {str(r.id) for r in member.roles}
-        for rid in ids:
-            if rid in ROLE_ID_RANKS:
-                rnk = ROLE_ID_RANKS[rid]
-                if (best is None) or (rnk[0] < best[0]):
-                    best = rnk
-    if best is None:
+Remplace par (username seul):
+def _pick_display_name(m: discord.Member) -> str:
+    return m.name
+
+def _pick_display_name(m: discord.Member) -> str:
+    disc = getattr(m, "discriminator", None)
+    return f"{m.name}#{disc}" if disc and disc != "0" else m.name
+    if best is None:a
         for r in member.roles:
             key = _normalize_role_name(r.name)
             if key in NAME_RANKS:
