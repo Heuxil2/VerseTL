@@ -115,15 +115,19 @@ def _normalize_role_name(n: str) -> str:
     return (n or "").strip().upper().replace("-", "").replace("_", "").replace(" ", "")
 
 def _pick_display_name(m: discord.Member) -> str:
-    return getattr(m, "nick", None) or getattr(m, "global_name", None) or m.name
-
-def _pick_display_name(m: discord.Member) -> str:
+    # username réel (pas le surnom serveur)
     return m.name
 
-def _pick_display_name(m: discord.Member) -> str:
-    disc = getattr(m, "discriminator", None)
-    return f"{m.name}#{disc}" if disc and disc != "0" else m.name
-    if best is None:a
+def _member_best_rank(member: discord.Member):
+    best = None  # (rank, display_tier)
+    if ROLE_ID_RANKS:
+        ids = {str(r.id) for r in member.roles}
+        for rid in ids:
+            if rid in ROLE_ID_RANKS:
+                rnk = ROLE_ID_RANKS[rid]
+                if (best is None) or (rnk[0] < best[0]):
+                    best = rnk
+    if best is None:
         for r in member.roles:
             key = _normalize_role_name(r.name)
             if key in NAME_RANKS:
@@ -208,6 +212,8 @@ STATS_FILE = "tester_stats.json"
 user_test_cooldowns = {}  # {user_id: datetime}
 COOLDOWNS_FILE = "user_cooldowns.json"
 LAST_ACTIVITY_FILE = "last_region_activity.json"
+
+# ====== Export web vanilla.json (cache + tâches) ======
 VANILLA_CACHE = {"updated_at": None, "tiers": {f"tier{i}": [] for i in range(1, 6)}}
 
 async def rebuild_and_cache_vanilla():
@@ -329,6 +335,13 @@ def has_high_tier(member: discord.Member) -> bool:
     except Exception:
         pass
     return False
+
+def is_tier_role_obj(role: discord.Role) -> bool:
+    # Priorité aux IDs si *_ROLE_IDS sont configurés
+    if str(role.id) in ROLE_ID_RANKS:
+        return True
+    # Sinon par nom (HT1..LT5)
+    return _normalize_role_name(role.name) in NAME_RANKS
 
 def save_tester_stats():
     try:
@@ -675,6 +688,42 @@ async def on_ready():
     if not periodic_save_activities.is_running():
         periodic_save_activities.start()
         print("DEBUG: Started periodic_save_activities task")
+
+    # Build initial du vanilla.json + start scheduler + route HTTP /vanilla.json
+    try:
+        await rebuild_and_cache_vanilla()
+    except Exception as e:
+        print(f"DEBUG: initial vanilla rebuild failed: {e}")
+
+    if not refresh_vanilla_export.is_running():
+        refresh_vanilla_export.start()
+        print("DEBUG: Started refresh_vanilla_export task")
+
+    try:
+        register_vanilla_callback(_vanilla_payload)
+        print("DEBUG: /vanilla.json exporter registered")
+    except Exception as e:
+        print(f"DEBUG: register_vanilla_callback failed: {e}")
+
+@bot.event
+async def on_member_update(before: discord.Member, after: discord.Member):
+    if not is_guild_authorized(getattr(after.guild, "id", None)):
+        return
+
+    if before.roles == after.roles:
+        return
+
+    before_ids = {r.id for r in before.roles}
+    after_ids  = {r.id for r in after.roles}
+    added   = [r for r in after.roles  if r.id not in before_ids]
+    removed = [r for r in before.roles if r.id not in after_ids]
+
+    if any(is_tier_role_obj(r) for r in (added + removed)):
+        try:
+            await rebuild_and_cache_vanilla()
+            print(f"DEBUG: Rebuilt vanilla cache due to tier role change for {after} in guild {after.guild.id}")
+        except Exception as e:
+            print(f"DEBUG: on_member_update rebuild failed: {e}")
 
 @bot.event
 async def on_guild_join(guild):
@@ -1595,6 +1644,12 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
 
     confirmation_parts.append("✅ Testing session completed")
 
+    # Met à jour le cache vanilla pour le site web
+    try:
+        await rebuild_and_cache_vanilla()
+    except Exception as e:
+        print(f"DEBUG: results() vanilla rebuild failed: {e}")
+
     await interaction.response.send_message(
         embed=discord.Embed(
             title="Results Posted",
@@ -2157,6 +2212,12 @@ async def buildtiers_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     try:
         tiers = await build_tiers(bot)
+        # Optionnel: synchroniser le cache exposé
+        global VANILLA_CACHE
+        VANILLA_CACHE = {
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "tiers": tiers,
+        }
         payload = json.dumps(tiers, indent=2).encode("utf-8")
         await interaction.followup.send(
             content="Here is your `vanilla.json` (HT/LT priority applied; deduped across guilds).",
@@ -2497,7 +2558,7 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
         embed.add_field(name="Position", value=f"#{position}", inline=True)
         embed.add_field(name="IGN", value=ign, inline=True)
         embed.add_field(name="Preferred Server", value=server, inline=True)
-        embed.add_field(name="Cooldown Type", value=cooldown_type, inline=True)
+        embed.add_field(name="Cooldown Type", value=colonnes if (colonnes := cooldown_type) else cooldown_type, inline=True)
         embed.add_field(name="Account Created", value=user.created_at.strftime("%Y-%m-%d"), inline=True)
 
         if is_booster:
