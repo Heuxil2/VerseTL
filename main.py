@@ -323,7 +323,21 @@ HIGH_TIERS = ["HT1", "LT1", "HT2", "LT2", "HT3"]
 
 # Branding for embeds
 VERSE_BRAND_NAME = "VerseTL"
-VERSE_LOGO_URL = os.getenv("VERSE_LOGO_URL") or "https://upnow-prod.ff45e40d1a1c8f7e7de4e976d0c9e555.r2.cloudflarestorage.com/dzbRgzDeFWeXAQx0Q8EGh5FXSiF3/0670e4c9-d8d3-4f25-85cc-03717121a17d?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=2f488bd324502ec20fee5b40e9c9ed39%2F20250812%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20250812T161311Z&X-Amz-Expires=43200&X-Amz-Signature=7a14dab019355ab773cf5eb1c049322c48030aeb575ccd744d534081b61291b5&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22bigger%20version%20Verse%20ranked%20logo.png%22"
+VERSE_LOGO_URL = os.getenv("VERSE_LOGO_URL")
+
+def get_brand_logo_url(guild: discord.Guild | None = None) -> str | None:
+    """
+    Renvoie l’URL du logo:
+    - d’abord VERSE_LOGO_URL si défini
+    - sinon l’icône du serveur (si disponible)
+    """
+    url = VERSE_LOGO_URL
+    if url and url.strip():
+        return url.strip()
+    try:
+        return guild.icon.url if guild and guild.icon else None
+    except Exception:
+        return None
 
 # Track the current #1 we have already notified per region
 FIRST_IN_QUEUE_TRACKER = {"na": None, "eu": None, "as": None, "au": None}
@@ -2726,7 +2740,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     if not (region in opened_queues and tester_ids):
         embed.set_author(
             name=VERSE_BRAND_NAME,
-            icon_url=VERSE_LOGO_URL
+            icon_url=get_brand_logo_url(guild)
         )
         embed.title = "No Testers Online"
 
@@ -2884,7 +2898,7 @@ async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
             description="Your position in the queue has changed.\nYou are now #1 in the queue.",
             color=discord.Color.blurple()
         )
-        embed.set_author(name=VERSE_BRAND_NAME, icon_url=VERSE_LOGO_URL)
+        embed.set_author(name=VERSE_BRAND_NAME, icon_url=get_brand_logo_url(guild))
         await member.send(embed=embed)
         print(f"DEBUG: Sent 'Queue Position Updated' DM to {member.name} for {region.upper()} region")
     except discord.Forbidden:
@@ -2946,7 +2960,7 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
 
     embed.set_author(
         name=VERSE_BRAND_NAME,
-        icon_url=VERSE_LOGO_URL
+        icon_url=get_brand_logo_url(guild)
     )
 
     try:
