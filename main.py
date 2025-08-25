@@ -73,7 +73,7 @@ def _split_ids(env_value: str | None):
 
 def _role_id_ranks_from_env():
     """
-    role_id (str) -> (rank, display_tier)
+    role_id (str) -> (rank, display_tier, exact_label)
     Accepte des listes d'IDs séparées par des virgules pour chaque tier,
     afin d'inclure les IDs des rôles de tes deux serveurs.
     Priorité (rank croissant = plus haut): HT1(1) > LT1(2) > HT2(3) > LT2(4) > HT3(5) > LT3(6) > HT4(7) > LT4(8) > HT5(9) > LT5(10)
@@ -97,8 +97,9 @@ def _role_id_ranks_from_env():
 
     mapping = {}
     for plural, singular, rank, disp in entries:
+        exact = plural.split("_", 1)[0]  # "HT3_ROLE_IDS" -> "HT3"
         for rid in get_ids(plural, singular):
-            mapping[str(rid)] = (rank, disp)
+            mapping[str(rid)] = (rank, disp, exact)
     return mapping
 
 ROLE_ID_RANKS = _role_id_ranks_from_env()
@@ -110,6 +111,7 @@ NAME_RANKS = {
     "HT4": (7,4), "LT4": (8,4),
     "HT5": (9,5), "LT5": (10,5),
 }
+EXACT_KEYS = ["HT1","LT1","HT2","LT2","HT3","LT3","HT4","LT4","HT5","LT5"]
 
 def _normalize_role_name(n: str) -> str:
     return (n or "").strip().upper().replace("-", "").replace("_", "").replace(" ", "")
@@ -119,46 +121,94 @@ def _pick_display_name(m: discord.Member) -> str:
     return m.name
 
 def _member_best_rank(member: discord.Member):
-    best = None  # (rank, display_tier)
+    best = None  # (rank, display_tier, exact_label)
     if ROLE_ID_RANKS:
         ids = {str(r.id) for r in member.roles}
         for rid in ids:
             if rid in ROLE_ID_RANKS:
-                rnk = ROLE_ID_RANKS[rid]
+                rnk = ROLE_ID_RANKS[rid]  # triple
                 if (best is None) or (rnk[0] < best[0]):
                     best = rnk
     if best is None:
         for r in member.roles:
             key = _normalize_role_name(r.name)
             if key in NAME_RANKS:
-                rnk = NAME_RANKS[key]
+                rank, disp = NAME_RANKS[key]
+                rnk = (rank, disp, key)  # key est "HT3", "LT3", etc.
                 if (best is None) or (rnk[0] < best[0]):
                     best = rnk
-    return best  # (rank, display_tier)
+    return best  # (rank, display_tier, exact_label)
 
 async def build_tiers(bot: commands.Bot) -> dict:
     guild_ids = _env_guild_ids()
     if not guild_ids:
         raise RuntimeError("No GUILD_ID_1/GUILD_ID_2 (or GUILD_ID) configured")
 
-    users = {}  # user_id -> {"name": str, "rank": int, "display_tier": int}
+    users = {}  # user_id -> {"discord": str, "ign": str|None, "rank": int, "display_tier": int, "exact": str}
     for gid in guild_ids:
         guild = bot.get_guild(gid) or await bot.fetch_guild(gid)
         async for m in guild.fetch_members(limit=None):
             best = _member_best_rank(m)
             if best is None:
                 continue
-            rank, disp = best
+            rank, disp, exact = best
+            ign = None
+            try:
+                info = user_info.get(m.id)
+                ign = (info or {}).get("ign")
+            except Exception:
+                ign = None
             cur = users.get(m.id)
             if (cur is None) or (rank < cur["rank"]):
-                users[m.id] = {"name": _pick_display_name(m), "rank": rank, "display_tier": disp}
+                users[m.id] = {
+                    "discord": _pick_display_name(m),
+                    "ign": ign,
+                    "rank": rank,
+                    "display_tier": disp,
+                    "exact": exact
+                }
 
-    result = {f"tier{i}": [] for i in range(1, 6)}
-    for data in users.values():
-        result[f"tier{data['display_tier']}"].append(data["name"])
-    for arr in result.values():
+    tiers_discord = {f"tier{i}": [] for i in range(1, 6)}
+    tiers_ign = {f"tier{i}": [] for i in range(1, 6)}
+    tiers_detailed = {f"tier{i}": [] for i in range(1, 6)}
+    exact_buckets_discord = {k: [] for k in EXACT_KEYS}
+    exact_buckets_ign = {k: [] for k in EXACT_KEYS}
+
+    for uid, data in users.items():
+        tier_key = f"tier{data['display_tier']}"
+        discord_name = data["discord"]
+        ign_name = data["ign"] or discord_name
+
+        tiers_discord[tier_key].append(discord_name)
+        tiers_ign[tier_key].append(ign_name)
+        tiers_detailed[tier_key].append({
+            "user_id": uid,
+            "discord": discord_name,
+            "ign": data["ign"],
+            "exact": data["exact"]
+        })
+
+        exact_buckets_discord[data["exact"]].append(discord_name)
+        exact_buckets_ign[data["exact"]].append(ign_name)
+
+    for arr in tiers_discord.values():
         arr.sort(key=lambda s: s.lower())
-    return result
+    for arr in tiers_ign.values():
+        arr.sort(key=lambda s: s.lower())
+    for arr in tiers_detailed.values():
+        arr.sort(key=lambda d: (d["ign"] or d["discord"]).lower())
+    for arr in exact_buckets_discord.values():
+        arr.sort(key=lambda s: s.lower())
+    for arr in exact_buckets_ign.values():
+        arr.sort(key=lambda s: s.lower())
+
+    return {
+        "tiers": tiers_discord,
+        "tiers_ign": tiers_ign,
+        "tiers_detailed": tiers_detailed,
+        "exact_tiers": exact_buckets_discord,
+        "exact_tiers_ign": exact_buckets_ign,
+    }
 
 def load_authorized_guilds():
     global authorized_guilds
@@ -209,22 +259,30 @@ last_test_session = datetime.datetime.now()
 last_region_activity = {"na": None, "eu": None, "as": None, "au": None}
 tester_stats = {}  # {user_id: test_count}
 STATS_FILE = "tester_stats.json"
+USER_INFO_FILE = "user_info.json"
 user_test_cooldowns = {}  # {user_id: datetime}
 COOLDOWNS_FILE = "user_cooldowns.json"
 LAST_ACTIVITY_FILE = "last_region_activity.json"
 
 # ====== Export web vanilla.json (cache + tâches) ======
-VANILLA_CACHE = {"updated_at": None, "tiers": {f"tier{i}": [] for i in range(1, 6)}}
+VANILLA_CACHE = {
+    "updated_at": None,
+    "tiers": {f"tier{i}": [] for i in range(1, 6)},
+    "tiers_ign": {f"tier{i}": [] for i in range(1, 6)},
+    "tiers_detailed": {f"tier{i}": [] for i in range(1, 6)},
+    "exact_tiers": {k: [] for k in EXACT_KEYS},
+    "exact_tiers_ign": {k: [] for k in EXACT_KEYS},
+}
 
 async def rebuild_and_cache_vanilla():
     """Reconstruit le JSON tiers et le met en cache pour l’export web."""
     global VANILLA_CACHE
-    tiers = await build_tiers(bot)
+    built = await build_tiers(bot)
     VANILLA_CACHE = {
         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "tiers": tiers,
+        **built,
     }
-    total = sum(len(v) for v in tiers.values())
+    total = sum(len(v) for v in built["tiers"].values())
     print(f"DEBUG: Rebuilt vanilla cache with {total} users")
 
 @tasks.loop(minutes=10)  # ajuste si tu veux
@@ -467,6 +525,31 @@ def get_sheets_service():
         print(f"DEBUG: Error setting up Google Sheets service: {e}")
     return None
 
+# --- NEW: Persist user_info (IGN, server, region) ---
+def save_user_info():
+    try:
+        serializable = {str(uid): data for uid, data in user_info.items()}
+        with open(USER_INFO_FILE, "w", encoding="utf-8") as f:
+            json.dump(serializable, f, indent=2, ensure_ascii=False)
+        print(f"DEBUG: Saved {len(user_info)} user_info entries to {USER_INFO_FILE}")
+    except Exception as e:
+        print(f"DEBUG: Error saving user_info: {e}")
+
+def load_user_info():
+    global user_info
+    try:
+        if os.path.exists(USER_INFO_FILE):
+            with open(USER_INFO_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            user_info = {int(uid): data for uid, data in raw.items()}
+            print(f"DEBUG: Loaded {len(user_info)} user_info entries from {USER_INFO_FILE}")
+        else:
+            print("DEBUG: No user_info file found, starting fresh")
+            user_info = {}
+    except Exception as e:
+        print(f"DEBUG: Error loading user_info: {e}")
+        user_info = {}
+
 async def add_ign_to_sheet(ign: str, tier: str):
     """Add IGN to the appropriate tier column in the Google Sheet"""
     try:
@@ -578,6 +661,7 @@ async def on_ready():
 
     load_tester_stats()
     load_user_cooldowns()
+    load_user_info()
     load_last_region_activity()
 
     global opened_queues, active_testers, waitlists, waitlist_message_ids, waitlist_messages, active_testing_sessions
@@ -2254,9 +2338,10 @@ async def serverinfo(interaction: discord.Interaction):
     embed.add_field(name="👥 Members", value=guild.member_count, inline=True)
     embed.add_field(name="💬 Text Channels", value=len(guild.text_channels), inline=True)
     embed.add_field(name="🔊 Voice Channels", value=len(guild.voice_channels), inline=True)
-    embed.add_field(name="🎭 Roles", value=len(guild.roles), inline=True)
-    embed.add_field(name="🚀 Boost Level", value=guild.premium_tier, inline=True)
-    embed.add_field(name="💎 Boosters", value=guild.premium_subscription_count, inline=True)
+    embed.add_field(name="📁 Categories", value=len(guild.categories), inline=True)
+    embed.add_field(name="📺 Stage Channels", value=len(guild.stage_channels), inline=True)
+    embed.add_field(name="🎙️ Forum Channels", value=len([c for c in guild.channels if isinstance(c, discord.ForumChannel)]), inline=True)
+    embed.add_field(name="📊 Total Channels", value=len(guild.channels), inline=True)
 
     await interaction.response.send_message(embed=embed)
 
@@ -2393,16 +2478,16 @@ async def commands_list(interaction: discord.Interaction):
 async def buildtiers_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     try:
-        tiers = await build_tiers(bot)
+        built = await build_tiers(bot)
         # Optionnel: synchroniser le cache exposé
         global VANILLA_CACHE
         VANILLA_CACHE = {
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "tiers": tiers,
+            **built,
         }
-        payload = json.dumps(tiers, indent=2).encode("utf-8")
+        payload = json.dumps(VANILLA_CACHE, indent=2).encode("utf-8")
         await interaction.followup.send(
-            content="Here is your `vanilla.json` (HT/LT priority applied; deduped across guilds).",
+            content="Here is your `vanilla.json` (includes HT/LT and IGNs; deduped across guilds).",
             file=discord.File(BytesIO(payload), filename="vanilla.json"),
             ephemeral=True
         )
@@ -2507,41 +2592,26 @@ class WaitlistModal(discord.ui.Modal):
                 del active_testing_sessions[user_id]
 
         region_input = self.region.value.lower().strip()
-
         valid_regions = ["na", "eu", "as", "au"]
         if region_input not in valid_regions:
             embed = discord.Embed(title="❌ Invalid Region", description="Invalid region. Please use NA, EU, AS, or AU.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        user_regions = []
-        for region, queue in waitlists.items():
-            if interaction.user.id in queue:
-                user_regions.append(region)
+        # Sauvegarde/MAJ des infos (toujours autorisée)
+        existing = user_info.get(user_id)
+        previous_region = (existing or {}).get("region")
+        previous_ign = (existing or {}).get("ign")
 
-        if interaction.user.id in user_info:
-            existing_region = user_info[interaction.user.id]["region"].lower()
-            embed = discord.Embed(title="ℹ️ Form Already Submitted", description=f"You have already submitted a form for the {existing_region.upper()} region. Visit <#waitlist-{existing_region}> to join the queue.", color=discord.Color.red())
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-
-        if user_regions:
-            if len(user_regions) == 1:
-                existing_region = user_regions[0]
-                embed = discord.Embed(title="ℹ️ Already in Waitlist", description=f"You're already in a waitlist. Visit <#waitlist-{existing_region}> to see your position.", color=discord.Color.red())
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-            else:
-                regions_channels = ", ".join([f"<#waitlist-{region}>" for region in user_regions])
-                embed = discord.Embed(title="ℹ️ Multiple Waitlists", description=f"You're already in multiple waitlists: {regions_channels}", color=discord.Color.red())
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-
-        user_info[interaction.user.id] = {
+        user_info[user_id] = {
             "ign": self.minecraft_ign.value,
             "server": self.minecraft_server.value,
-            "region": region_input.upper()
+            "region": region_input.upper(),
+            "updated_at": datetime.datetime.now().isoformat()
         }
+        save_user_info()
 
+        # Rôles d’accès aux salons de waitlist
         waitlist_role = discord.utils.get(
             interaction.guild.roles,
             name=f"Waitlist-{region_input.upper()}")
@@ -2560,13 +2630,36 @@ class WaitlistModal(discord.ui.Modal):
             except discord.Forbidden:
                 pass
 
+        # Message de confirmation
         is_booster = has_booster_role(interaction.user)
         cooldown_info = f"\n\n💎 **Booster Perk:** You have a {BOOSTER_COOLDOWN_DAYS}-day cooldown instead of {REGULAR_COOLDOWN_DAYS} days!" if is_booster else f"\n\n⏰ **Cooldown:** {REGULAR_COOLDOWN_DAYS} days after test completion."
 
+        changed_ign = (previous_ign and previous_ign != self.minecraft_ign.value)
+        changed_region = (previous_region and previous_region != region_input.upper())
+
+        extra = []
+        if changed_ign:
+            extra.append("✏️ Your IGN has been updated and will be reflected everywhere (leaderboard, exports) on the next refresh.")
+        if changed_region:
+            # Si dans la mauvaise queue, on le mentionne
+            user_regions = []
+            for r, queue in waitlists.items():
+                if interaction.user.id in queue:
+                    user_regions.append(r.upper())
+            if user_regions and region_input.upper() not in user_regions:
+                extra.append(f"🔁 You changed region to {region_input.upper()}. If you are queued in {', '.join(user_regions)}, use /leave then join <#waitlist-{region_input}>.")
+        extra_text = ("\n\n" + "\n".join(extra)) if extra else ""
+
         embed = discord.Embed(
-            description=f"✅ Form submitted successfully! You now have access to <#waitlist-{region_input}>.\n\n**Next step:** Go to <#waitlist-{region_input}> and click \"Join Queue\" to enter the testing queue.{cooldown_info}",
+            description=f"✅ Your form has been saved! You now have access to <#waitlist-{region_input}>.{cooldown_info}{extra_text}",
             color=discord.Color.green())
         embed.set_footer(text="Only you can see this • Dismiss message")
+
+        # Rebuild cache (pour refléter rapidement l’IGN)
+        try:
+            await rebuild_and_cache_vanilla()
+        except Exception:
+            pass
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -2872,8 +2965,18 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
     except Exception as e:
         print(f"DEBUG: Error creating initial message for {region} in guild {guild.id}: {e}")
 
+def _display_name_or_ign(user_id: int, guild: discord.Guild) -> str:
+    try:
+        info = user_info.get(user_id)
+        if info and info.get("ign"):
+            return info["ign"]
+    except Exception:
+        pass
+    member = guild.get_member(user_id)
+    return member.display_name if member else f"User {user_id}"
+
 async def update_leaderboard(guild: discord.Guild):
-    """Update a simple tester leaderboard if a suitable channel exists."""
+    """Update a simple tester leaderboard if a suitable channel exists. Uses IGN if available."""
     try:
         if not tester_stats:
             return
@@ -2886,8 +2989,7 @@ async def update_leaderboard(guild: discord.Guild):
         top = sorted(tester_stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
         lines = []
         for idx, (uid, count) in enumerate(top, 1):
-            member = guild.get_member(uid)
-            display = member.display_name if member else f"User {uid}"
+            display = _display_name_or_ign(uid, guild)
             lines.append(f"{idx}. {display} — {count} test(s)")
 
         embed = discord.Embed(title="Tester Leaderboard", description="\n".join(lines) or "*No data*", color=discord.Color.gold())
