@@ -322,7 +322,6 @@ TIER_COLUMNS = {
 HIGH_TIERS = ["HT1", "LT1", "HT2", "LT2", "HT3"]
 
 # Branding for embeds
-VERSE_BRAND_NAME = "VerseTL"
 VERSE_LOGO_URL = os.getenv("VERSE_LOGO_URL")
 
 def get_brand_logo_url(guild: discord.Guild | None = None) -> str | None:
@@ -338,6 +337,15 @@ def get_brand_logo_url(guild: discord.Guild | None = None) -> str | None:
         return guild.icon.url if guild and guild.icon else None
     except Exception:
         return None
+
+def get_brand_name(guild: discord.Guild | None = None) -> str:
+    """
+    Nom de marque affiché (par défaut: nom du serveur, fallback 'VerseTL' si inconnu).
+    """
+    try:
+        return guild.name if guild else "VerseTL"
+    except Exception:
+        return "VerseTL"
 
 # Track the current #1 we have already notified per region
 FIRST_IN_QUEUE_TRACKER = {"na": None, "eu": None, "as": None, "au": None}
@@ -1037,7 +1045,7 @@ async def on_interaction(interaction: discord.Interaction):
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
-                modal = WaitlistModal()
+                modal = WaitlistModal(get_brand_name(interaction.guild))
                 await interaction.response.send_modal(modal)
                 return
 
@@ -1097,7 +1105,7 @@ async def on_interaction(interaction: discord.Interaction):
                             pass
 
                     await interaction.response.send_message(
-                        f"✅ Successfully joined the {region.upper()} queue! You are position #{len(waitlists[region])} in line.",
+                        f"✅ Successfully joined the {region.UPPER()} queue! You are position #{len(waitlists[region])} in line.",
                         ephemeral=True)
 
                     await log_queue_join(interaction.guild, interaction.user, region, len(waitlists[region]))
@@ -1260,7 +1268,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     last_region_activity[region] = datetime.datetime.now()
     save_last_region_activity()
-    print(f"DEBUG: Updated and saved last activity for {region.upper()}")
+    print(f"DEBUG: Updated and saved last activity for {region.UPPER()}")
 
     if interaction.user.id not in active_testers[region]:
         active_testers[region].append(interaction.user.id)
@@ -1273,7 +1281,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
     await interaction.response.send_message(
             embed=discord.Embed(
                 title="✅ Queue Started",
-                description=f"{region.upper()} waitlist is now active in {waitlist_channel.mention if waitlist_channel else f'#waitlist-{region}'}. You are now an active tester.",
+                description=f"{region.UPPER()} waitlist is now active in {waitlist_channel.mention if waitlist_channel else f'#waitlist-{region}'}. You are now an active tester.",
                 color=discord.Color.green()
             ),
         ephemeral=True
@@ -1362,7 +1370,7 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         return
 
     if not waitlists[region]:
-        embed = discord.Embed(title="Empty Queue", description=f"No one is in the {region.upper()} waitlist.", color=discord.Color.red())
+        embed = discord.Embed(title="Empty Queue", description=f"No one is in the {region.UPPER()} waitlist.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -1387,15 +1395,15 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
 
     # Route HT3+ users to High Eval category automatically
     target_high = has_high_tier(next_user)
-    primary_category_name = f"High Eval {region.upper()}" if target_high else f"Eval {region.upper()}"
+    primary_category_name = f"High Eval {region.UPPER()}" if target_high else f"Eval {region.UPPER()}"
     category = discord.utils.get(interaction.guild.categories, name=primary_category_name)
 
     # Fallback to regular Eval if High Eval does not exist
     if not category and target_high:
-        fallback_name = f"Eval {region.upper()}"
+        fallback_name = f"Eval {region.UPPER()}"
         category = discord.utils.get(interaction.guild.categories, name=fallback_name)
         if category:
-            print(f"DEBUG: High Eval category not found for {region.upper()}, falling back to {fallback_name}")
+            print(f"DEBUG: High Eval category not found for {region.UPPER()}, falling back to {fallback_name}")
 
     if not category:
         embed = discord.Embed(title="Category Missing", description=f"Could not find category {primary_category_name}.", color=discord.Color.red())
@@ -1428,10 +1436,10 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
 
         roles_to_remove = []
         possible_role_names = [
-            f"Waitlist-{region.upper()}",
-            f"{region.upper()} Waitlist",
-            f"{region.upper()} Matchmaking",
-            f"waitlist-{region.upper()}",
+            f"Waitlist-{region.UPPER()}",
+            f"{region.UPPER()} Waitlist",
+            f"{region.UPPER()} Matchmaking",
+            f"waitlist-{region.UPPER()}",
             f"waitlist-{region.lower()}",
             f"{region.lower()} waitlist",
             f"{region.lower()} matchmaking"
@@ -1584,10 +1592,10 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
 
     for r in target_regions:
         possible_role_names = [
-            f"Waitlist-{r.upper()}",
-            f"{r.upper()} Waitlist",
-            f"{r.upper()} Matchmaking",
-            f"waitlist-{r.upper()}",
+            f"Waitlist-{r.UPPER()}",
+            f"{r.UPPER()} Waitlist",
+            f"{r.UPPER()} Matchmaking",
+            f"waitlist-{r.UPPER()}",
             f"waitlist-{r.lower()}",
             f"{r.lower()} waitlist",
             f"{r.lower()} matchmaking"
@@ -1623,7 +1631,7 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
         f"⏰ Applied a {cooldown_days}-day cooldown.",
     ]
     if removed_regions:
-        parts.append(f"🧹 Removed from waitlist(s): {', '.join(r.upper() for r in removed_regions)}")
+        parts.append(f"🧹 Removed from waitlist(s): {', '.join(r.UPPER() for r in removed_regions)}")
     if roles_to_remove:
         parts.append(f"🗑️ Removed waitlist role(s): {', '.join(r.name for r in roles_to_remove)}")
 
@@ -1669,7 +1677,7 @@ async def passeval(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    high_eval_category_name = f"High Eval {region.upper()}"
+    high_eval_category_name = f"High Eval {region.UPPER()}"
     high_eval_category = discord.utils.get(interaction.guild.categories, name=high_eval_category_name)
 
     if not high_eval_category:
@@ -2522,8 +2530,8 @@ def get_region_from_channel(channel_name: str) -> str:
     return None
 
 class WaitlistModal(discord.ui.Modal):
-    def __init__(self):
-        super().__init__(title="Enter Waitlist - VerseTL")
+    def __init__(self, brand_name: str):
+        super().__init__(title=f"Enter Waitlist - {brand_name}")
 
         self.minecraft_ign = discord.ui.TextInput(
             label="Enter Your Minecraft IGN",
@@ -2628,7 +2636,7 @@ class WaitlistModal(discord.ui.Modal):
         # Rôles d’accès aux salons de waitlist
         waitlist_role = discord.utils.get(
             interaction.guild.roles,
-            name=f"Waitlist-{region_input.upper()}")
+            name=f"Waitlist-{region_input.UPPER()}")
         if waitlist_role and waitlist_role < interaction.guild.me.top_role:
             try:
                 await interaction.user.add_roles(waitlist_role)
@@ -2637,7 +2645,7 @@ class WaitlistModal(discord.ui.Modal):
 
         matchmaking_role = discord.utils.get(
             interaction.guild.roles,
-            name=f"{region_input.upper()} Matchmaking")
+            name=f"{region_input.UPPER()} Matchmaking")
         if matchmaking_role and matchmaking_role < interaction.guild.me.top_role:
             try:
                 await interaction.user.add_roles(matchmaking_role)
@@ -2739,7 +2747,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
 
     if not (region in opened_queues and tester_ids):
         embed.set_author(
-            name=VERSE_BRAND_NAME,
+            name=get_brand_name(guild),
             icon_url=get_brand_logo_url(guild)
         )
         embed.title = "No Testers Online"
@@ -2847,13 +2855,13 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
 
         embed = discord.Embed(
             title="📋 Queue Join Log",
-            description=f"{user.mention} joined the {region.upper()} testing queue",
+            description=f"{user.mention} joined the {region.UPPER()} testing queue",
             color=0x00ff00,
             timestamp=datetime.datetime.now()
         )
 
         embed.add_field(name="User", value=f"{user.mention}\n`{user.name}` (ID: {user.id})", inline=True)
-        embed.add_field(name="Region", value=region.upper(), inline=True)
+        embed.add_field(name="Region", value=region.UPPER(), inline=True)
         embed.add_field(name="Position", value=f"#{position}", inline=True)
         embed.add_field(name="IGN", value=ign, inline=True)
         embed.add_field(name="Preferred Server", value=server, inline=True)
@@ -2867,7 +2875,7 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
         embed.set_footer(text="Queue Join Log", icon_url=guild.icon.url if guild.icon else None)
 
         await logs_channel.send(embed=embed)
-        print(f"DEBUG: Logged queue join for {user.name} ({cooldown_type}) in {region.upper()} region")
+        print(f"DEBUG: Logged queue join for {user.name} ({cooldown_type}) in {region.UPPER()} region")
 
     except Exception as e:
         print(f"DEBUG: Error logging queue join: {e}")
@@ -2898,9 +2906,9 @@ async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
             description="Your position in the queue has changed.\nYou are now #1 in the queue.",
             color=discord.Color.blurple()
         )
-        embed.set_author(name=VERSE_BRAND_NAME, icon_url=get_brand_logo_url(guild))
+        embed.set_author(name=get_brand_name(guild), icon_url=get_brand_logo_url(guild))
         await member.send(embed=embed)
-        print(f"DEBUG: Sent 'Queue Position Updated' DM to {member.name} for {region.upper()} region")
+        print(f"DEBUG: Sent 'Queue Position Updated' DM to {member.name} for {region.UPPER()} region")
     except discord.Forbidden:
         print(f"DEBUG: Could not DM {member} (privacy settings)")
     except Exception as e:
@@ -2921,7 +2929,7 @@ async def send_eval_welcome_message(channel: discord.TextChannel, region: str, p
         info_embed = discord.Embed(
             title="Welcome to your Evaluation Session",
             description=(
-                f"Hello {player_mention}! You have been selected for testing in the {region.upper()} region.\n\n"
+                f"Hello {player_mention}! You have been selected for testing in the {region.UPPER()} region.\n\n"
                 f"Your tester {tester_mention} will guide you through the process.\n\n"
                 f"**IGN:** {ign}\n**Preferred Server:** {server}"
             ),
@@ -2959,7 +2967,7 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
     )
 
     embed.set_author(
-        name=VERSE_BRAND_NAME,
+        name=get_brand_name(guild),
         icon_url=get_brand_logo_url(guild)
     )
 
