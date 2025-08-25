@@ -928,12 +928,33 @@ async def on_interaction(interaction: discord.Interaction):
         if custom_id == "open_form":
             # Use robust channel check instead of exact name
             if _is_request_channel(interaction.channel):
+                # Blocage si rôle "Tierlist Restricted"
+                restricted_role = discord.utils.get(interaction.user.roles, name="Tierlist Restricted")
+                if restricted_role:
+                    embed = discord.Embed(
+                        title="⛔ Access Denied",
+                        description="You are currently restricted from entering the queue.",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+
                 modal = WaitlistModal()
                 await interaction.response.send_modal(modal)
                 return
 
             for region in waitlists:
                 if interaction.channel.name.lower() == f"waitlist-{region}":
+                    # Blocage sécurité aussi dans les salons waitlist-...
+                    if discord.utils.get(interaction.user.roles, name="Tierlist Restricted"):
+                        embed = discord.Embed(
+                            title="⛔ Access Denied",
+                            description="You are currently restricted from joining the queue.",
+                            color=discord.Color.red()
+                        )
+                        await interaction.response.send_message(embed=embed, ephemeral=True)
+                        return
+
                     user_id = interaction.user.id
                     if user_id not in user_info:
                         embed = discord.Embed(title="❌ Form Required", description="You must submit the form in <#📨┃request-test> before joining the queue.", color=discord.Color.red())
@@ -1207,7 +1228,7 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
         await interaction.response.send_message(
             embed=discord.Embed(
                 title="👋 Left Active Testers",
-                description=f"You have been removed from active testers for {region.upper()} in {channel.mention}.",
+                description=f"You have been removed from active testers for {region.UPPER()} in {channel.mention}.",
                 color=discord.Color.blurple()
             ),
             ephemeral=True
@@ -1355,6 +1376,167 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
     except Exception as e:
         embed = discord.Embed(title="Error", description=f"An error occurred while creating the channel: {str(e)}", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# --- NEW: Add user to current eval channel ---
+@bot.tree.command(name="add", description="Add a user to the current eval channel (Tester role required)")
+@app_commands.describe(member="Member to add to this eval channel")
+async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+
+    # Only testers can use this command
+    if not has_tester_role(interaction.user):
+        embed = discord.Embed(
+            title="❌ Tester Role Required",
+            description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    # Must be used inside an eval channel
+    channel = interaction.channel
+    if not isinstance(channel, discord.TextChannel) or not channel.name.startswith("eval-"):
+        embed = discord.Embed(
+            title="❌ Wrong Channel",
+            description="This command can only be used inside an eval channel.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    # If the user already has an active session
+    existing_channel_id = active_testing_sessions.get(member.id)
+    if existing_channel_id:
+        if existing_channel_id == channel.id:
+            try:
+                await channel.set_permissions(member, read_messages=True, send_messages=True)
+            except discord.Forbidden:
+                pass
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="ℹ️ Already Added",
+                    description=f"{member.mention} already has an active session in this channel. Ensured access permissions.",
+                    color=discord.Color.orange()
+                ),
+                ephemeral=True
+            )
+            return
+        else:
+            existing_channel = interaction.guild.get_channel(existing_channel_id)
+            place = existing_channel.mention if existing_channel else "another channel"
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="❌ Active Session Exists",
+                    description=f"{member.mention} already has an active testing session in {place}.",
+                    color=discord.Color.red()
+                ),
+                ephemeral=True
+            )
+            return
+
+    # Grant access to this channel
+    try:
+        await channel.set_permissions(member, read_messages=True, send_messages=True)
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="Missing Permission",
+                description="I don't have permission to manage channel permissions here.",
+                color=discord.Color.red()
+            ),
+            ephemeral=True
+        )
+        return
+    except Exception as e:
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="Error",
+                description=f"An error occurred while setting permissions: {e}",
+                color=discord.Color.red()
+            ),
+            ephemeral=True
+        )
+        return
+
+    # Remove from waitlists and update messages
+    removed_regions = []
+    for r, queue in waitlists.items():
+        if member.id in queue:
+            queue.remove(member.id)
+            removed_regions.append(r)
+            try:
+                await update_waitlist_message(interaction.guild, r)
+            except Exception:
+                pass
+
+    # Remove waitlist roles
+    roles_to_remove = []
+    # Try infer region from category name ("Eval NA", "High Eval NA", etc.)
+    target_regions = []
+    if channel.category:
+        cat_name = channel.category.name.lower()
+        for r in ["na", "eu", "as", "au"]:
+            if r in cat_name:
+                target_regions = [r]
+                break
+    if not target_regions:
+        # If unknown, attempt cleanup for all regions
+        target_regions = ["na", "eu", "as", "au"]
+
+    for r in target_regions:
+        possible_role_names = [
+            f"Waitlist-{r.upper()}",
+            f"{r.upper()} Waitlist",
+            f"{r.upper()} Matchmaking",
+            f"waitlist-{r.upper()}",
+            f"waitlist-{r.lower()}",
+            f"{r.lower()} waitlist",
+            f"{r.lower()} matchmaking"
+        ]
+        for role_name in possible_role_names:
+            role = discord.utils.get(interaction.guild.roles, name=role_name)
+            if role and role in member.roles and role < interaction.guild.me.top_role:
+                roles_to_remove.append(role)
+
+    for role in roles_to_remove:
+        try:
+            await member.remove_roles(role)
+        except discord.Forbidden:
+            pass
+        except Exception:
+            pass
+
+    # Mark session as active
+    active_testing_sessions[member.id] = channel.id
+
+    # Apply cooldown as after a tier test
+    cooldown_days = apply_cooldown(member.id, member)
+
+    # Send welcome message
+    welcome_region = target_regions[0] if target_regions else "unknown"
+    try:
+        await send_eval_welcome_message(channel, welcome_region, member, interaction.user)
+    except Exception:
+        pass
+
+    parts = [
+        f"✅ {member.mention} has been added to this eval channel.",
+        f"⏰ Applied a {cooldown_days}-day cooldown.",
+    ]
+    if removed_regions:
+        parts.append(f"🧹 Removed from waitlist(s): {', '.join(r.upper() for r in removed_regions)}")
+    if roles_to_remove:
+        parts.append(f"🗑️ Removed waitlist role(s): {', '.join(r.name for r in roles_to_remove)}")
+
+    await interaction.response.send_message(
+        embed=discord.Embed(
+            title="User Added",
+            description="\n".join(parts),
+            color=discord.Color.green()
+        ),
+        ephemeral=True
+    )
 
 @bot.tree.command(name="passeval", description="Transfer eval channel to High Eval category (Tester role required)")
 async def passeval(interaction: discord.Interaction):
@@ -2270,6 +2452,16 @@ class WaitlistModal(discord.ui.Modal):
             embed = discord.Embed(
                 title="⛔ Unauthorized Server",
                 description="This server is not authorized to use this bot. Ask <@836452038548127764> to run /authorize.",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        # Blocage également ici si "Tierlist Restricted"
+        if discord.utils.get(interaction.user.roles, name="Tierlist Restricted"):
+            embed = discord.Embed(
+                title="⛔ Access Denied",
+                description="You are currently restricted from entering the queue.",
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
