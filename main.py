@@ -40,7 +40,7 @@ GUILD_ID = int(os.getenv("GUILD_ID", "0")) if os.getenv("GUILD_ID") else None
 OWNER_ID = 836452038548127764  # Heuxil
 AUTHORIZED_FILE = "authorized_guilds.json"
 authorized_guilds = set()
-APP_CHECK_ADDED = False  # pour n’ajouter le check global qu’une seule fois
+APP_CHECK_ADDED = False  # pour n'ajouter le check global qu'une seule fois
 
 def _env_guild_ids():
     """
@@ -275,7 +275,7 @@ VANILLA_CACHE = {
 }
 
 async def rebuild_and_cache_vanilla():
-    """Reconstruit le JSON tiers et le met en cache pour l’export web."""
+    """Reconstruit le JSON tiers et le met en cache pour l'export web."""
     global VANILLA_CACHE
     built = await build_tiers(bot)
     VANILLA_CACHE = {
@@ -326,9 +326,9 @@ VERSE_LOGO_URL = os.getenv("VERSE_LOGO_URL")
 
 def get_brand_logo_url(guild: discord.Guild | None = None) -> str | None:
     """
-    Renvoie l’URL du logo:
-    - d’abord VERSE_LOGO_URL si défini
-    - sinon l’icône du serveur (si disponible)
+    Renvoie l'URL du logo:
+    - d'abord VERSE_LOGO_URL si défini
+    - sinon l'icône du serveur (si disponible)
     """
     url = VERSE_LOGO_URL
     if url and url.strip():
@@ -383,7 +383,8 @@ def _is_request_channel(channel: discord.abc.GuildChannel) -> bool:
     return _normalize_channel_name(channel.name) == _normalize_channel_name(REQUEST_CHANNEL_NAME)
 
 def has_booster_role(member: discord.Member) -> bool:
-    booster_role = discord.utils.get(member.roles, name="Booster")
+    # Updated to check for "VT • Server Booster" instead of "Booster"
+    booster_role = discord.utils.get(member.roles, name="VT • Server Booster")
     return booster_role is not None
 
 def get_cooldown_duration(member: discord.Member) -> int:
@@ -395,7 +396,7 @@ def apply_cooldown(user_id: int, member: discord.Member):
     user_test_cooldowns[user_id] = cooldown_end
     save_user_cooldowns()
 
-    role_type = "Booster" if has_booster_role(member) else "Regular"
+    role_type = "VT • Server Booster" if has_booster_role(member) else "Regular"
     print(f"DEBUG: Applied {cooldown_days}-day cooldown for {role_type} user {member.name} (ID: {user_id}) until {cooldown_end}")
     return cooldown_days
 
@@ -642,6 +643,184 @@ def run_with_backoff():
                 continue
             raise  # autres erreurs: on laisse remonter pour les voir
 
+# ============ HELPER FUNCTIONS FOR NEW FEATURES ============
+
+def _slug_username(name: str) -> str:
+    """Transforme le pseudo en nom de salon lisible/valide"""
+    safe = "".join(ch.lower() if ch.isalnum() else "-" for ch in name)
+    while "--" in safe:
+        safe = safe.replace("--", "-")
+    return safe.strip("-") or "user"
+
+async def post_tier_results(interaction: discord.Interaction, user: discord.Member, ign: str,
+                            region: str, gamemode: str, current_rank: str, earned_rank: str,
+                            tester: discord.Member):
+    """Réutilisable par /results et le menu /close: envoie l'embed, met à jour stats/feuille, donne le rôle."""
+    guild = interaction.guild
+
+    # Détermine le bon salon de résultats
+    if earned_rank in HIGH_TIERS:
+        results_channel = discord.utils.get(guild.text_channels, name="🏆┃high-results")
+        is_high_result = True
+    else:
+        results_channel = discord.utils.get(guild.text_channels, name="🏆┃results")
+        is_high_result = False
+
+    if not results_channel:
+        # Pas de salon dédié -> ne rien faire pour éviter les erreurs visibles
+        return
+
+    # Embed
+    embed_color = 0x00ff00 if is_high_result else 0xff0000
+    embed = discord.Embed(title=f"{ign}'s Test Results", color=embed_color)
+    title_prefix = "🔥 **HIGH TIER** 🔥\n" if is_high_result else ""
+    embed.description = (
+        f"{title_prefix}"
+        f"**Tester:**\n{tester.mention}\n"
+        f"**Region:**\n{region}\n"
+        f"**Minecraft IGN:**\n{ign}\n"
+        f"**Previous Tier:**\n{current_rank}\n"
+        f"**Tier Earned:**\n{earned_rank}"
+    )
+    embed.set_thumbnail(url=f"https://mc-heads.net/head/{ign}/100")
+
+    sent = await results_channel.send(content=user.mention, embed=embed)
+
+    try:
+        for e in (["👑", "🔥", "⚡", "💎", "✨"] if is_high_result else ["👑", "🤯", "👀", "😱", "🔥"]):
+            await sent.add_reaction(e)
+    except Exception:
+        pass
+
+    # Stats testeur
+    tester_id = tester.id
+    if tester_id not in tester_stats:
+        tester_stats[tester_id] = 0
+    tester_stats[tester_id] += 1
+    save_tester_stats()
+
+    # Feuille Google (best-effort)
+    try:
+        await add_ign_to_sheet(ign, earned_rank)
+    except Exception:
+        pass
+
+    # Leaderboard
+    try:
+        await update_leaderboard(guild)
+    except Exception:
+        pass
+
+    # Donne le rôle gagné et retire les anciens
+    try:
+        earned_role = discord.utils.get(guild.roles, name=earned_rank)
+        if earned_role and earned_role < guild.me.top_role:
+            all_tier_roles = ["HT1","LT1","HT2","LT2","HT3","LT3","HT4","LT4","HT5","LT5"]
+            to_remove = []
+            for rn in all_tier_roles:
+                r = discord.utils.get(guild.roles, name=rn)
+                if r and r in user.roles:
+                    to_remove.append(r)
+            if to_remove:
+                await user.remove_roles(*to_remove, reason=f"Remove previous tier roles before giving {earned_rank}")
+            await user.add_roles(earned_role, reason=f"Earned {earned_rank} from tier test")
+    except Exception:
+        pass
+
+    # Rebuild cache vanilla
+    try:
+        await rebuild_and_cache_vanilla()
+    except Exception:
+        pass
+
+    # Nettoyage session active
+    try:
+        if user.id in active_testing_sessions:
+            del active_testing_sessions[user.id]
+    except Exception:
+        pass
+
+# ============ DROPDOWN VIEW FOR /CLOSE ============
+
+class TierSelectView(discord.ui.View):
+    def __init__(self, channel: discord.TextChannel, tester: discord.Member):
+        super().__init__(timeout=60)
+        self.channel = channel
+        self.tester = tester
+        self.player = None
+        # Retrouve l'utilisateur testé via le mapping session -> channel
+        for uid, cid in active_testing_sessions.items():
+            if cid == channel.id:
+                self.player = channel.guild.get_member(uid)
+                break
+
+    @discord.ui.select(
+        placeholder="Choisissez le tier gagné…",
+        options=[
+            discord.SelectOption(label="HT1", value="HT1"),
+            discord.SelectOption(label="LT1", value="LT1"),
+            discord.SelectOption(label="HT2", value="HT2"),
+            discord.SelectOption(label="LT2", value="LT2"),
+            discord.SelectOption(label="HT3", value="HT3"),
+            discord.SelectOption(label="LT3", value="LT3"),
+            discord.SelectOption(label="HT4", value="HT4"),
+            discord.SelectOption(label="LT4", value="LT4"),
+            discord.SelectOption(label="HT5", value="HT5"),
+            discord.SelectOption(label="LT5", value="LT5"),
+        ]
+    )
+    async def select_tier(self, interaction: discord.Interaction, select: discord.ui.Select):
+        earned = select.values[0]
+        # Récup info user
+        if self.player:
+            data = user_info.get(self.player.id, {}) if isinstance(user_info, dict) else {}
+            ign = data.get("ign", self.player.display_name)
+            # Trouve la région depuis la catégorie du salon
+            region = "NA"
+            if self.channel.category:
+                cname = self.channel.category.name.lower()
+                for r in ["na","eu","as","au"]:
+                    if r in cname:
+                        region = r.upper()
+                        break
+
+            # Post résultats
+            try:
+                await post_tier_results(
+                    interaction=interaction,
+                    user=self.player,
+                    ign=ign,
+                    region=region,
+                    gamemode="Crystal",
+                    current_rank="N/A",
+                    earned_rank=earned,
+                    tester=self.tester
+                )
+            except Exception as e:
+                print(f"DEBUG: post_tier_results error: {e}")
+
+        # Message et fermeture après 5s
+        embed = discord.Embed(
+            title="Channel Closing",
+            description=f"Results posted for {earned}.\nThis channel will be deleted in 5 seconds…",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed)
+
+        # Nettoie la session active
+        try:
+            if self.player and self.player.id in active_testing_sessions:
+                del active_testing_sessions[self.player.id]
+        except Exception:
+            pass
+
+        await asyncio.sleep(5)
+        try:
+            await self.channel.delete(reason=f"Eval closed with tier {earned} by {self.tester.name}")
+        except Exception:
+            pass
+        self.stop()
+
 # ============ GLOBAL CHECK FOR SLASH COMMANDS ============
 
 async def global_app_check(interaction: discord.Interaction) -> bool:
@@ -769,7 +948,7 @@ async def on_ready():
                 print(f"DEBUG: Could not purge request-test channel: {e}")
 
             await request_channel.send(embed=embed, view=view)
-            print(f"DEBUG: Created single request button in request-test channel with Booster cooldown info")
+            print(f"DEBUG: Created single request button in request-test channel with VT • Server Booster cooldown info")
 
         for region in waitlists:
             channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
@@ -1001,7 +1180,7 @@ async def on_message_delete(message):
 @bot.event
 async def on_guild_channel_delete(channel):
     """Clean up tracking when eval channels are deleted"""
-    if channel.name.startswith("eval-"):
+    if channel.name.startswith("eval-") or channel.name.startswith("high-eval-"):
         channel_id = channel.id
         user_to_remove = None
 
@@ -1376,16 +1555,14 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
 
     next_user_id = waitlists[region].pop(0)
     next_user = interaction.guild.get_member(next_user_id)
-
     if not next_user:
         embed = discord.Embed(title="User Not Found", description="Could not find the next user in the waitlist.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
+    # Empêche les doublons de tickets
     if next_user_id in active_testing_sessions:
-        existing_channel_id = active_testing_sessions[next_user_id]
-        existing_channel = interaction.guild.get_channel(existing_channel_id)
-
+        existing_channel = interaction.guild.get_channel(active_testing_sessions[next_user_id])
         if existing_channel:
             embed = discord.Embed(title="Active Session Exists", description=f"{next_user.mention} already has an active testing session in {existing_channel.mention}.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1393,37 +1570,34 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         else:
             del active_testing_sessions[next_user_id]
 
-    # Route HT3+ users to High Eval category automatically
     target_high = has_high_tier(next_user)
     primary_category_name = f"High Eval {region.upper()}" if target_high else f"Eval {region.upper()}"
     category = discord.utils.get(interaction.guild.categories, name=primary_category_name)
 
-    # Fallback to regular Eval if High Eval does not exist
     if not category and target_high:
-        fallback_name = f"Eval {region.upper()}"
-        category = discord.utils.get(interaction.guild.categories, name=fallback_name)
-        if category:
-            print(f"DEBUG: High Eval category not found for {region.upper()}, falling back to {fallback_name}")
+        # fallback sur Eval si pas de catégorie High Eval
+        category = discord.utils.get(interaction.guild.categories, name=f"Eval {region.upper()}")
 
     if not category:
         embed = discord.Embed(title="Category Missing", description=f"Could not find category {primary_category_name}.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    timestamp = int(datetime.datetime.now().timestamp())
-    channel_name = f"eval-{next_user.display_name.lower().replace(' ', '-')}-{timestamp}"
+    # NOMMAGE NOUVEAU: Eval (nom discord) ou High-Eval-(nom discord)
+    username = next_user.display_name
+    if target_high:
+        channel_name = f"High-Eval-{username}"
+    else:
+        channel_name = f"Eval {username}"
 
     overwrites = {
         interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
         next_user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
     }
-
-    # Give access to all tester roles
-    tester_role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester", "staff tester"]
-    for role_name in tester_role_names:
-        tester_role = discord.utils.get(interaction.guild.roles, name=role_name)
-        if tester_role:
-            overwrites[tester_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+    for rn in ["Tester","Verified Tester","Staff Tester","tester","verified tester","staff tester"]:
+        tr = discord.utils.get(interaction.guild.roles, name=rn)
+        if tr:
+            overwrites[tr] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
     try:
         new_channel = await interaction.guild.create_text_channel(
@@ -1434,30 +1608,21 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
 
         active_testing_sessions[next_user_id] = new_channel.id
 
-        roles_to_remove = []
-        possible_role_names = [
-            f"Waitlist-{region.upper()}",
-            f"{region.upper()} Waitlist",
-            f"{region.upper()} Matchmaking",
-            f"waitlist-{region.upper()}",
-            f"waitlist-{region.lower()}",
-            f"{region.lower()} waitlist",
-            f"{region.lower()} matchmaking"
-        ]
-
-        for role_name in possible_role_names:
-            role = discord.utils.get(interaction.guild.roles, name=role_name)
-            if role and role in next_user.roles and role < interaction.guild.me.top_role:
-                roles_to_remove.append(role)
-
-        for role in roles_to_remove:
+        # Nettoie les rôles d'attente
+        to_remove = []
+        for rn in [
+            f"Waitlist-{region.upper()}", f"{region.upper()} Waitlist", f"{region.upper()} Matchmaking",
+            f"waitlist-{region.upper()}", f"waitlist-{region.lower()}",
+            f"{region.lower()} waitlist", f"{region.lower()} matchmaking"
+        ]:
+            r = discord.utils.get(interaction.guild.roles, name=rn)
+            if r and r in next_user.roles and r < interaction.guild.me.top_role:
+                to_remove.append(r)
+        for r in to_remove:
             try:
-                await next_user.remove_roles(role)
-                print(f"DEBUG: Successfully removed role '{role.name}' from {next_user.name}")
-            except discord.Forbidden:
-                print(f"DEBUG: No permission to remove role '{role.name}' from {next_user.name}")
-            except Exception as e:
-                print(f"DEBUG: Error removing role '{role.name}': {e}")
+                await next_user.remove_roles(r)
+            except Exception:
+                pass
 
         await update_waitlist_message(interaction.guild, region)
 
@@ -1471,8 +1636,7 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         )
 
         cooldown_days = apply_cooldown(next_user_id, next_user)
-        role_type = "Booster" if has_booster_role(next_user) else "regular"
-        print(f"DEBUG: Applied {cooldown_days}-day cooldown for {role_type} user {next_user.name}")
+        print(f"DEBUG: Applied {cooldown_days}-day cooldown for {'VT • Server Booster' if has_booster_role(next_user) else 'regular'} user {next_user.name}")
 
         await send_eval_welcome_message(new_channel, region, next_user, interaction.user)
 
@@ -1500,9 +1664,9 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # Must be used inside an eval channel
+    # Must be used inside an eval channel (either eval- or high-eval-)
     channel = interaction.channel
-    if not isinstance(channel, discord.TextChannel) or not channel.name.startswith("eval-"):
+    if not isinstance(channel, discord.TextChannel) or not (channel.name.startswith("Eval ") or channel.name.startswith("High-Eval-")):
         embed = discord.Embed(
             title="❌ Wrong Channel",
             description="This command can only be used inside an eval channel.",
@@ -1654,24 +1818,24 @@ async def passeval(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    if not interaction.channel.name.startswith("eval-"):
+    ch = interaction.channel
+    if not (isinstance(ch, discord.TextChannel) and (ch.name.startswith("Eval ") or ch.name.startswith("High-Eval-"))):
         embed = discord.Embed(title="Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    current_category = interaction.channel.category
+    current_category = ch.category
     if not current_category:
         embed = discord.Embed(title="No Category", description="Channel must be in a category to determine region.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    category_name = current_category.name.lower()
     region = None
-    for r in ["na", "eu", "as", "au"]:
-        if r in category_name:
+    cname = current_category.name.lower()
+    for r in ["na","eu","as","au"]:
+        if r in cname:
             region = r
             break
-
     if not region:
         embed = discord.Embed(title="Unknown Region", description="Could not determine region from current category.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1679,15 +1843,24 @@ async def passeval(interaction: discord.Interaction):
 
     high_eval_category_name = f"High Eval {region.upper()}"
     high_eval_category = discord.utils.get(interaction.guild.categories, name=high_eval_category_name)
-
     if not high_eval_category:
         embed = discord.Embed(title="Category Missing", description=f"Could not find {high_eval_category_name} category.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
+    # Renommage: Eval xxx -> High-Eval-xxx
+    old = ch.name
+    if old.startswith("High-Eval-"):
+        new_name = old  # déjà bon
+    elif old.startswith("Eval "):
+        new_name = f"High-Eval-{old[5:]}"  # Remplace "Eval " par "High-Eval-"
+    else:
+        # autre pattern: on préfixe simplement
+        new_name = f"High-Eval-{old}"
+
     try:
-        await interaction.channel.edit(category=high_eval_category)
-        await interaction.response.send_message(f"✅ This channel has been transferred to {high_eval_category_name}.", ephemeral=True)
+        await ch.edit(category=high_eval_category, name=new_name)
+        await interaction.response.send_message(f"✅ This channel has been transferred to {high_eval_category_name} and renamed to `{new_name}`.", ephemeral=True)
 
         embed = discord.Embed(
             title="High Evaluation",
@@ -1695,15 +1868,14 @@ async def passeval(interaction: discord.Interaction):
             color=0xff6600
         )
         await interaction.followup.send(embed=embed)
-
     except discord.Forbidden:
-        embed = discord.Embed(title="Missing Permission", description="I don't have permission to move this channel.", color=discord.Color.red())
+        embed = discord.Embed(title="Missing Permission", description="I don't have permission to move/rename this channel.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
     except Exception as e:
-        embed = discord.Embed(title="Error", description=f"An error occurred while moving the channel: {str(e)}", color=discord.Color.red())
+        embed = discord.Embed(title="Error", description=f"An error occurred while moving/renaming the channel: {str(e)}", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="close", description="Close an eval channel (Tester role required)")
+@bot.tree.command(name="close", description="Close an eval channel with tier selection (Tester role required)")
 async def close(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
@@ -1713,39 +1885,19 @@ async def close(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    if not interaction.channel.name.startswith("eval-"):
+    ch = interaction.channel
+    if not (isinstance(ch, discord.TextChannel) and (ch.name.startswith("Eval ") or ch.name.startswith("High-Eval-"))):
         embed = discord.Embed(title="❌ Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    try:
-        channel_id = interaction.channel.id
-        user_to_remove = None
-        for user_id, active_channel_id in active_testing_sessions.items():
-            if active_channel_id == channel_id:
-                user_to_remove = user_id
-                break
-
-        if user_to_remove:
-            del active_testing_sessions[user_to_remove]
-            print(f"DEBUG: Removed active testing session for user {user_to_remove}")
-
-        embed = discord.Embed(
-            title="Channel Closing",
-            description=f"This evaluation channel is being closed by {interaction.user.mention}.\n\nChannel will be deleted in 5 seconds...",
-            color=0xff0000
-        )
-
-        await interaction.response.send_message(embed=embed)
-        await asyncio.sleep(5)
-        await interaction.channel.delete(reason=f"Eval channel closed by {interaction.user.name}")
-
-    except discord.Forbidden:
-        embed = discord.Embed(title="Missing Permission", description="I don't have permission to delete this channel.", color=discord.Color.red())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    except Exception as e:
-        embed = discord.Embed(title="Error", description=f"An error occurred while closing the channel: {str(e)}", color=discord.Color.red())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+    view = TierSelectView(ch, interaction.user)
+    embed = discord.Embed(
+        title="Select Tier Result",
+        description="Choisissez le tier gagné. Les résultats seront publiés automatiquement, puis le salon se fermera dans 5 secondes.",
+        color=discord.Color.blurple()
+    )
+    await interaction.response.send_message(embed=embed, view=view)
 
 @bot.tree.command(name="results", description="Post tier test results")
 @app_commands.describe(
@@ -1801,148 +1953,34 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    if not interaction.channel.name.startswith("eval-"):
+    if not (interaction.channel.name.startswith("Eval ") or interaction.channel.name.startswith("High-Eval-")):
         embed = discord.Embed(title="Wrong Channel", description="This command can only be used in eval channels to prevent duplicate results.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
+    # Use the helper function
+    await post_tier_results(
+        interaction=interaction,
+        user=user,
+        ign=ign,
+        region=region,
+        gamemode=gamemode,
+        current_rank=current_rank,
+        earned_rank=earned_rank,
+        tester=interaction.user
+    )
+
+    # Send confirmation message
+    confirmation_parts = [f"✅ Results posted for {user.mention}"]
     if earned_rank in HIGH_TIERS:
-        results_channel = discord.utils.get(interaction.guild.text_channels, name="🏆┃high-results")
-        is_high_result = True
-    else:
-        results_channel = discord.utils.get(interaction.guild.text_channels, name="🏆┃results")
-        is_high_result = False
-
-    if not results_channel:
-        channel_type = "high-results" if is_high_result else "results"
-        embed = discord.Embed(title="Channel Not Found", description=f"{channel_type.title()} channel not found.", color=discord.Color.red())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
-
-    duplicate_found = False
-    async for message in results_channel.history(limit=50):
-        if message.embeds and message.embeds[0].title:
-            if f"{ign}'s Test Results" in message.embeds[0].title:
-                time_diff = datetime.datetime.now(datetime.timezone.utc) - message.created_at
-                if time_diff.total_seconds() < 3600:
-                    duplicate_found = True
-                    break
-
-    if duplicate_found:
-        embed = discord.Embed(title="Duplicate Result", description=f"A result for {ign} was already posted recently. Please check {results_channel.mention} to avoid duplicates.", color=discord.Color.red())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
-
-    embed_color = 0x00ff00 if is_high_result else 0xff0000
-
-    embed = discord.Embed(
-        title=f"{ign}'s Test Results",
-        color=embed_color
-    )
-
-    title_prefix = "🔥 **HIGH TIER** 🔥\n" if is_high_result else ""
-
-    description = (
-        f"{title_prefix}"
-        f"**Tester:**\n{interaction.user.mention}\n"
-        f"**Region:**\n{region}\n"
-        f"**Minecraft IGN:**\n{ign}\n"
-        f"**Previous Tier:**\n{current_rank}\n"
-        f"**Tier Earned:**\n{earned_rank}"
-    )
-
-    embed.description = description
-
-    minecraft_head_url = f"https://mc-heads.net/head/{ign}/100"
-    embed.set_thumbnail(url=minecraft_head_url)
-
-    sent_message = await results_channel.send(content=user.mention, embed=embed)
-
-    if is_high_result:
-        emojis = ["👑", "🔥", "⚡", "💎", "✨"]
-    else:
-        emojis = ["👑", "🤯", "👀", "😱", "🔥"]
-
-    try:
-        for emoji in emojis:
-            await sent_message.add_reaction(emoji)
-    except discord.Forbidden:
-        print("Bot doesn't have permission to add reactions")
-    except Exception as e:
-        print(f"Error adding reactions: {e}")
-
-    tester_id = interaction.user.id
-    if tester_id not in tester_stats:
-        tester_stats[tester_id] = 0
-    tester_stats[tester_id] += 1
-
-    save_tester_stats()
-
-    sheet_success = await add_ign_to_sheet(ign, earned_rank)
-
-    await update_leaderboard(interaction.guild)
-
-    user_id = user.id
-    if user_id in active_testing_sessions:
-        del active_testing_sessions[user_id]
-        print(f"DEBUG: Removed active testing session for user {user_id} after results posted")
-
-    role_given = False
-    earned_role = discord.utils.get(interaction.guild.roles, name=earned_rank)
-
-    if earned_role and earned_role < interaction.guild.me.top_role:
-        try:
-            all_tier_roles = ["HT1", "LT1", "HT2", "LT2", "HT3", "LT3", "HT4", "LT4", "HT5", "LT5"]
-            roles_to_remove = []
-
-            for tier_role_name in all_tier_roles:
-                existing_tier_role = discord.utils.get(interaction.guild.roles, name=tier_role_name)
-                if existing_tier_role and existing_tier_role in user.roles:
-                    roles_to_remove.append(existing_tier_role)
-
-            if roles_to_remove:
-                await user.remove_roles(*roles_to_remove, reason=f"Removing all previous tier roles before giving {earned_rank}")
-                print(f"DEBUG: Removed old tier roles {[role.name for role in roles_to_remove]} from {user.name}")
-
-            await user.add_roles(earned_role, reason=f"Earned {earned_rank} from tier test")
-            role_given = True
-            print(f"DEBUG: Successfully gave {earned_rank} role to {user.name}")
-
-        except discord.Forbidden:
-            print(f"DEBUG: No permission to manage roles for {user.name}")
-        except Exception as e:
-            print(f"DEBUG: Error managing roles for {user.name}: {e}")
-    else:
-        print(f"DEBUG: Role {earned_rank} not found or bot doesn't have sufficient permissions")
-
-    confirmation_parts = [f"✅ Results posted for {user.mention} in {results_channel.mention}"]
-
-    if is_high_result:
         confirmation_parts.append("🔥 **HIGH TIER RESULT** - Posted in high-results channel!")
-
-    if sheet_success:
-        confirmation_parts.append(f"✅ IGN added to {earned_rank} tier in spreadsheet")
-    else:
-        confirmation_parts.append("⚠️ Could not add IGN to spreadsheet (check configuration)")
-
-    if role_given:
-        confirmation_parts.append(f"✅ {earned_rank} role given to {user.mention}")
-    else:
-        confirmation_parts.append(f"⚠️ Could not give {earned_rank} role (check permissions/role exists)")
-
     confirmation_parts.append("✅ Testing session completed")
-
-    # Met à jour le cache vanilla pour le site web
-    try:
-        await rebuild_and_cache_vanilla()
-    except Exception as e:
-        print(f"DEBUG: results() vanilla rebuild failed: {e}")
 
     await interaction.response.send_message(
         embed=discord.Embed(
             title="Results Posted",
             description="\n".join(confirmation_parts),
-            color=discord.Color.green() if role_given else discord.Color.orange()
+            color=discord.Color.green()
         ),
         ephemeral=True
     )
@@ -2586,7 +2624,7 @@ class WaitlistModal(discord.ui.Modal):
                 minutes = (time_remaining.seconds % 3600) // 60
 
                 is_booster = has_booster_role(interaction.user)
-                cooldown_type = "Booster (2 days)" if is_booster else "Regular (4 days)"
+                cooldown_type = "VT • Server Booster (2 days)" if is_booster else "Regular (4 days)"
 
                 cooldown_embed = discord.Embed(
                     title="⏰ Cooldown Active",
@@ -2633,7 +2671,7 @@ class WaitlistModal(discord.ui.Modal):
         }
         save_user_info()
 
-        # Rôles d’accès aux salons de waitlist
+        # Rôles d'accès aux salons de waitlist
         waitlist_role = discord.utils.get(
             interaction.guild.roles,
             name=f"Waitlist-{region_input.upper()}")
@@ -2654,7 +2692,7 @@ class WaitlistModal(discord.ui.Modal):
 
         # Message de confirmation
         is_booster = has_booster_role(interaction.user)
-        cooldown_info = f"\n\n💎 **Booster Perk:** You have a {BOOSTER_COOLDOWN_DAYS}-day cooldown instead of {REGULAR_COOLDOWN_DAYS} days!" if is_booster else f"\n\n⏰ **Cooldown:** {REGULAR_COOLDOWN_DAYS} days after test completion."
+        cooldown_info = f"\n\n💎 **VT • Server Booster Perk:** You have a {BOOSTER_COOLDOWN_DAYS}-day cooldown instead of {REGULAR_COOLDOWN_DAYS} days!" if is_booster else f"\n\n⏰ **Cooldown:** {REGULAR_COOLDOWN_DAYS} days after test completion."
 
         changed_ign = (previous_ign and previous_ign != self.minecraft_ign.value)
         changed_region = (previous_region and previous_region != region_input.upper())
@@ -2677,7 +2715,7 @@ class WaitlistModal(discord.ui.Modal):
             color=discord.Color.green())
         embed.set_footer(text="Only you can see this • Dismiss message")
 
-        # Rebuild cache (pour refléter rapidement l’IGN)
+        # Rebuild cache (pour refléter rapidement l'IGN)
         try:
             await rebuild_and_cache_vanilla()
         except Exception:
@@ -2851,7 +2889,7 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
         server = user_data.get('server', 'N/A')
 
         is_booster = has_booster_role(user)
-        cooldown_type = f"Booster ({BOOSTER_COOLDOWN_DAYS} days)" if is_booster else f"Regular ({REGULAR_COOLDOWN_DAYS} days)"
+        cooldown_type = f"VT • Server Booster ({BOOSTER_COOLDOWN_DAYS} days)" if is_booster else f"Regular ({REGULAR_COOLDOWN_DAYS} days)"
 
         embed = discord.Embed(
             title="📋 Queue Join Log",
@@ -2865,11 +2903,11 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
         embed.add_field(name="Position", value=f"#{position}", inline=True)
         embed.add_field(name="IGN", value=ign, inline=True)
         embed.add_field(name="Preferred Server", value=server, inline=True)
-        embed.add_field(name="Cooldown Type", value=colonnes if (colonnes := cooldown_type) else cooldown_type, inline=True)
+        embed.add_field(name="Cooldown Type", value=cooldown_type, inline=True)
         embed.add_field(name="Account Created", value=user.created_at.strftime("%Y-%m-%d"), inline=True)
 
         if is_booster:
-            embed.add_field(name="Special Status", value="💎 **Booster**", inline=True)
+            embed.add_field(name="Special Status", value="💎 **VT • Server Booster**", inline=True)
 
         embed.set_thumbnail(url=user.display_avatar.url)
         embed.set_footer(text="Queue Join Log", icon_url=guild.icon.url if guild.icon else None)
