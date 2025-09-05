@@ -755,7 +755,7 @@ class TierSelectView(discord.ui.View):
                 break
 
     @discord.ui.select(
-        placeholder="Choisissez le tier gagné…",
+        placeholder="Choose the tier earned or close only…",
         options=[
             discord.SelectOption(label="HT1", value="HT1"),
             discord.SelectOption(label="LT1", value="LT1"),
@@ -767,11 +767,37 @@ class TierSelectView(discord.ui.View):
             discord.SelectOption(label="LT4", value="LT4"),
             discord.SelectOption(label="HT5", value="HT5"),
             discord.SelectOption(label="LT5", value="LT5"),
+            discord.SelectOption(label="Only Close", value="only_close", description="Close channel without posting results"),
         ]
     )
     async def select_tier(self, interaction: discord.Interaction, select: discord.ui.Select):
         earned = select.values[0]
-        # Récup info user
+        
+        # Si "only close" est sélectionné, fermer sans poster de résultats
+        if earned == "only_close":
+            embed = discord.Embed(
+                title="Channel Closing",
+                description="This channel will be closed in 5 seconds…",
+                color=discord.Color.orange()
+            )
+            await interaction.response.send_message(embed=embed)
+            
+            # Nettoie la session active
+            try:
+                if self.player and self.player.id in active_testing_sessions:
+                    del active_testing_sessions[self.player.id]
+            except Exception:
+                pass
+            
+            await asyncio.sleep(5)
+            try:
+                await self.channel.delete(reason=f"Eval closed without results by {self.tester.name}")
+            except Exception:
+                pass
+            self.stop()
+            return
+        
+        # Sinon, poster les résultats normalement
         if self.player:
             data = user_info.get(self.player.id, {}) if isinstance(user_info, dict) else {}
             ign = data.get("ign", self.player.display_name)
@@ -1443,6 +1469,32 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
+    # Clear the waitlist when restarting the queue
+    cleared_count = len(waitlists[region])
+    if cleared_count > 0:
+        # Remove waitlist roles from all users in queue
+        for user_id in waitlists[region]:
+            member = interaction.guild.get_member(user_id)
+            if member:
+                roles_to_remove = []
+                for role_name in [
+                    f"Waitlist-{region.upper()}", f"{region.upper()} Waitlist", f"{region.upper()} Matchmaking",
+                    f"waitlist-{region.upper()}", f"waitlist-{region.lower()}",
+                    f"{region.lower()} waitlist", f"{region.lower()} matchmaking"
+                ]:
+                    role = discord.utils.get(interaction.guild.roles, name=role_name)
+                    if role and role in member.roles and role < interaction.guild.me.top_role:
+                        roles_to_remove.append(role)
+                
+                for role in roles_to_remove:
+                    try:
+                        await member.remove_roles(role)
+                    except Exception:
+                        pass
+        
+        waitlists[region].clear()
+        print(f"DEBUG: Cleared {cleared_count} users from {region} waitlist")
+
     opened_queues.add(region)
 
     last_region_activity[region] = datetime.datetime.now()
@@ -1457,10 +1509,12 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     waitlist_channel = discord.utils.get(interaction.guild.text_channels, name=f"waitlist-{region}")
 
+    queue_status = f"\n🧹 Cleared {cleared_count} users from the previous queue." if cleared_count > 0 else ""
+    
     await interaction.response.send_message(
             embed=discord.Embed(
                 title="✅ Queue Started",
-                description=f"{region.upper()} waitlist is now active in {waitlist_channel.mention if waitlist_channel else f'#waitlist-{region}'}. You are now an active tester.",
+                description=f"{region.upper()} waitlist is now active in {waitlist_channel.mention if waitlist_channel else f'#waitlist-{region}'}. You are now an active tester.{queue_status}",
                 color=discord.Color.green()
             ),
         ephemeral=True
@@ -1819,7 +1873,14 @@ async def passeval(interaction: discord.Interaction):
         return
 
     ch = interaction.channel
-    if not (isinstance(ch, discord.TextChannel) and (ch.name.startswith("Eval ") or ch.name.startswith("High-Eval-"))):
+    if not isinstance(ch, discord.TextChannel):
+        embed = discord.Embed(title="Wrong Channel", description="This command can only be used in text channels.", color=discord.Color.red())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+    
+    # Check if channel name contains "eval" (case insensitive) to be more flexible
+    channel_name_lower = ch.name.lower()
+    if "eval" not in channel_name_lower:
         embed = discord.Embed(title="Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -1848,12 +1909,14 @@ async def passeval(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # Renommage: Eval xxx -> High-Eval-xxx
+    # Renommage: plus flexible pour différents patterns
     old = ch.name
-    if old.startswith("High-Eval-"):
+    if old.lower().startswith("high-eval-"):
         new_name = old  # déjà bon
-    elif old.startswith("Eval "):
+    elif old.lower().startswith("eval "):
         new_name = f"High-Eval-{old[5:]}"  # Remplace "Eval " par "High-Eval-"
+    elif old.lower().startswith("eval-"):
+        new_name = f"High-{old}"  # eval-xxx -> High-eval-xxx
     else:
         # autre pattern: on préfixe simplement
         new_name = f"High-Eval-{old}"
@@ -1886,15 +1949,21 @@ async def close(interaction: discord.Interaction):
         return
 
     ch = interaction.channel
-    if not (isinstance(ch, discord.TextChannel) and (ch.name.startswith("Eval ") or ch.name.startswith("High-Eval-"))):
+    if not isinstance(ch, discord.TextChannel):
+        embed = discord.Embed(title="❌ Wrong Channel", description="This command can only be used in text channels.", color=discord.Color.red())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+    
+    # Check if channel name contains "eval" to be more flexible
+    if "eval" not in ch.name.lower():
         embed = discord.Embed(title="❌ Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     view = TierSelectView(ch, interaction.user)
     embed = discord.Embed(
-        title="Select Tier Result",
-        description="Choisissez le tier gagné. Les résultats seront publiés automatiquement, puis le salon se fermera dans 5 secondes.",
+        title="Select Tier Result or Close",
+        description="Choose the tier earned to post results, or select 'Only Close' to close without posting results. The channel will close 5 seconds after your selection.",
         color=discord.Color.blurple()
     )
     await interaction.response.send_message(embed=embed, view=view)
@@ -2628,10 +2697,9 @@ class WaitlistModal(discord.ui.Modal):
 
                 cooldown_embed = discord.Embed(
                     title="⏰ Cooldown Active",
-                    description=f"You must wait **{days} days, {hours} hours, and {minutes} minutes** before you can request another test.\n\n**Cooldown Type:** {cooldown_type}",
+                    description=f"You must wait **{days} days, {hours} hours, and {minutes} minutes** before you can test again.",
                     color=0xff0000
                 )
-                cooldown_embed.set_footer(text=f"Cooldown expires after {BOOSTER_COOLDOWN_DAYS if is_booster else REGULAR_COOLDOWN_DAYS} days from your last test")
 
                 await interaction.response.send_message(embed=cooldown_embed, ephemeral=True)
                 return
@@ -2711,7 +2779,7 @@ class WaitlistModal(discord.ui.Modal):
         extra_text = ("\n\n" + "\n".join(extra)) if extra else ""
 
         embed = discord.Embed(
-            description=f"✅ Your form has been saved! You now have access to <#waitlist-{region_input}>.{cooldown_info}{extra_text}",
+            description=f"✅ Your form has been saved! You have been added to #waitlist-{region_input}.{cooldown_info}{extra_text}",
             color=discord.Color.green())
         embed.set_footer(text="Only you can see this • Dismiss message")
 
