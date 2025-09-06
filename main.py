@@ -252,8 +252,9 @@ waitlists = {"na": [], "eu": [], "as": [], "au": []}
 MAX_WAITLIST = 20
 waitlist_message_ids = {}  # Store message IDs for each region (per guild)
 waitlist_messages = {}  # Store actual message objects for each region (per guild)
-opened_queues = set()
-active_testers = {"na": [], "eu": [], "as": [], "au": []}  # Track active testers per region
+# Per-guild queue state
+opened_queues = {}  # {guild_id: set(region)}
+active_testers = {}  # {guild_id: {"na": [], "eu": [], "as": [], "au": []}}
 user_info = {}  # {user_id: {"ign": str, "server": str, "region": str}}
 last_test_session = datetime.datetime.now()
 last_region_activity = {"na": None, "eu": None, "as": None, "au": None}
@@ -263,6 +264,13 @@ USER_INFO_FILE = "user_info.json"
 user_test_cooldowns = {}  # {user_id: datetime}
 COOLDOWNS_FILE = "user_cooldowns.json"
 LAST_ACTIVITY_FILE = "last_region_activity.json"
+
+def _ensure_guild_queue_state(guild_id: int):
+    """Ensure per-guild queue structures exist."""
+    if guild_id not in opened_queues:
+        opened_queues[guild_id] = set()
+    if guild_id not in active_testers:
+        active_testers[guild_id] = {"na": [], "eu": [], "as": [], "au": []}
 
 # ====== Export web vanilla.json (cache + tâches) ======
 VANILLA_CACHE = {
@@ -654,17 +662,21 @@ def _slug_username(name: str) -> str:
 
 async def post_tier_results(interaction: discord.Interaction, user: discord.Member, ign: str,
                             region: str, gamemode: str, current_rank: str, earned_rank: str,
-                            tester: discord.Member):
+                            tester: discord.Member, *, force_results_to_standard: bool = False):
     """Réutilisable par /results et le menu /close: envoie l'embed, met à jour stats/feuille, donne le rôle."""
     guild = interaction.guild
 
     # Détermine le bon salon de résultats
-    if earned_rank in HIGH_TIERS:
-        results_channel = discord.utils.get(guild.text_channels, name="🏆┃high-results")
-        is_high_result = True
+    is_high_result = earned_rank in HIGH_TIERS
+    if force_results_to_standard:
+        # Forcer l'envoi dans le salon results même pour les high tiers
+        results_channel = discord.utils.get(guild.text_channels, name="🏆┃results") or \
+                          discord.utils.get(guild.text_channels, name="results")
     else:
-        results_channel = discord.utils.get(guild.text_channels, name="🏆┃results")
-        is_high_result = False
+        if is_high_result:
+            results_channel = discord.utils.get(guild.text_channels, name="🏆┃high-results")
+        else:
+            results_channel = discord.utils.get(guild.text_channels, name="🏆┃results")
 
     if not results_channel:
         # Pas de salon dédié -> ne rien faire pour éviter les erreurs visibles
@@ -780,7 +792,7 @@ class TierSelectView(discord.ui.View):
                 description="This channel will be closed in 5 seconds…",
                 color=discord.Color.orange()
             )
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             
             # Nettoie la session active
             try:
@@ -831,7 +843,7 @@ class TierSelectView(discord.ui.View):
             description=f"Results posted for {earned}.\nThis channel will be deleted in 5 seconds…",
             color=discord.Color.green()
         )
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
         # Nettoie la session active
         try:
@@ -893,8 +905,7 @@ async def on_ready():
 
     global opened_queues, active_testers, waitlists, waitlist_message_ids, waitlist_messages, active_testing_sessions
     opened_queues.clear()
-    for region in active_testers:
-        active_testers[region].clear()
+    active_testers.clear()
     for region in waitlists:
         waitlists[region].clear()
     waitlist_message_ids.clear()
@@ -985,7 +996,8 @@ async def on_ready():
                 except Exception as e:
                     print(f"DEBUG: Could not purge waitlist-{region}: {e}")
 
-                opened_queues.discard(region)
+                _ensure_guild_queue_state(guild.id)
+                opened_queues[guild.id].discard(region)
                 await create_initial_waitlist_message(guild, region)
 
     if not refresh_messages.is_running():
@@ -1469,11 +1481,12 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # Clear the waitlist when restarting the queue
-    cleared_count = len(waitlists[region])
+    # Clear only this guild's members from the waitlist when restarting the queue
+    to_purge = [uid for uid in waitlists[region] if interaction.guild.get_member(uid)]
+    cleared_count = len(to_purge)
     if cleared_count > 0:
-        # Remove waitlist roles from all users in queue
-        for user_id in waitlists[region]:
+        # Remove waitlist roles from all users in queue (for this guild only)
+        for user_id in to_purge:
             member = interaction.guild.get_member(user_id)
             if member:
                 roles_to_remove = []
@@ -1485,27 +1498,31 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
                     role = discord.utils.get(interaction.guild.roles, name=role_name)
                     if role and role in member.roles and role < interaction.guild.me.top_role:
                         roles_to_remove.append(role)
-                
                 for role in roles_to_remove:
                     try:
                         await member.remove_roles(role)
                     except Exception:
                         pass
-        
-        waitlists[region].clear()
-        print(f"DEBUG: Cleared {cleared_count} users from {region} waitlist")
+        # Remove those users from the shared waitlist
+        for uid in to_purge:
+            try:
+                waitlists[region].remove(uid)
+            except ValueError:
+                pass
+        print(f"DEBUG: Cleared {cleared_count} users from {region} waitlist in guild {interaction.guild.id}")
 
-    opened_queues.add(region)
+    _ensure_guild_queue_state(interaction.guild.id)
+    opened_queues[interaction.guild.id].add(region)
 
     last_region_activity[region] = datetime.datetime.now()
     save_last_region_activity()
     print(f"DEBUG: Updated and saved last activity for {region.upper()}")
 
-    if interaction.user.id not in active_testers[region]:
-        active_testers[region].append(interaction.user.id)
+    if interaction.user.id not in active_testers[interaction.guild.id][region]:
+        active_testers[interaction.guild.id][region].append(interaction.user.id)
 
-    print(f"DEBUG: Added {region} to opened_queues: {opened_queues}")
-    print(f"DEBUG: Active testers for {region}: {active_testers[region]}")
+    print(f"DEBUG: Added {region} to opened_queues for guild {interaction.guild.id}: {opened_queues[interaction.guild.id]}")
+    print(f"DEBUG: Active testers for {region} in guild {interaction.guild.id}: {active_testers[interaction.guild.id][region]}")
 
     waitlist_channel = discord.utils.get(interaction.guild.text_channels, name=f"waitlist-{region}")
 
@@ -1556,13 +1573,14 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    if interaction.user.id in active_testers[region]:
-        active_testers[region].remove(interaction.user.id)
-        print(f"DEBUG: Removed user {interaction.user.name} from active testers for {region}")
+    _ensure_guild_queue_state(interaction.guild.id)
+    if interaction.user.id in active_testers[interaction.guild.id][region]:
+        active_testers[interaction.guild.id][region].remove(interaction.user.id)
+        print(f"DEBUG: Removed user {interaction.user.name} from active testers for {region} in guild {interaction.guild.id}")
 
-        if not active_testers[region]:
-            opened_queues.discard(region)
-            print(f"DEBUG: No more active testers for {region}, removed from opened_queues")
+        if not active_testers[interaction.guild.id][region]:
+            opened_queues[interaction.guild.id].discard(region)
+            print(f"DEBUG: No more active testers for {region} in guild {interaction.guild.id}, removed from opened_queues")
 
         await interaction.response.send_message(
             embed=discord.Embed(
@@ -1966,7 +1984,7 @@ async def close(interaction: discord.Interaction):
         description="Choose the tier earned to post results, or select 'Only Close' to close without posting results. The channel will close 5 seconds after your selection.",
         color=discord.Color.blurple()
     )
-    await interaction.response.send_message(embed=embed, view=view)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 @bot.tree.command(name="results", description="Post tier test results")
 @app_commands.describe(
@@ -2027,7 +2045,7 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # Use the helper function
+    # Use the helper function (force posting into standard results channel)
     await post_tier_results(
         interaction=interaction,
         user=user,
@@ -2036,13 +2054,14 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
         gamemode=gamemode,
         current_rank=current_rank,
         earned_rank=earned_rank,
-        tester=interaction.user
+        tester=interaction.user,
+        force_results_to_standard=True
     )
 
     # Send confirmation message
     confirmation_parts = [f"✅ Results posted for {user.mention}"]
     if earned_rank in HIGH_TIERS:
-        confirmation_parts.append("🔥 **HIGH TIER RESULT** - Posted in high-results channel!")
+        confirmation_parts.append("🔥 **HIGH TIER RESULT** - Posted in results channel!")
     confirmation_parts.append("✅ Testing session completed")
 
     await interaction.response.send_message(
@@ -2808,8 +2827,11 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         waitlist_message_ids[guild.id] = {}
 
     tester_ids = []
-    if region in opened_queues:
-        for tester_id in active_testers[region]:
+    # Per-guild testers/queues
+    guild_queue = opened_queues.get(guild.id, set())
+    guild_testers = active_testers.get(guild.id, {}).get(region, [])
+    if region in guild_queue:
+        for tester_id in guild_testers:
             member = guild.get_member(tester_id)
             if member and member.status != discord.Status.offline:
                 tester_ids.append(tester_id)
@@ -2830,7 +2852,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     else:
         timestamp = "Never"
 
-    if region in opened_queues and tester_ids:
+    if region in guild_queue and tester_ids:
         color = discord.Color.from_rgb(220, 80, 120)
         description = (
             f"**Tester(s) Available!**\n\n"
