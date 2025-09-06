@@ -662,21 +662,14 @@ def _slug_username(name: str) -> str:
 
 async def post_tier_results(interaction: discord.Interaction, user: discord.Member, ign: str,
                             region: str, gamemode: str, current_rank: str, earned_rank: str,
-                            tester: discord.Member, *, force_results_to_standard: bool = False):
+                            tester: discord.Member):
     """Réutilisable par /results et le menu /close: envoie l'embed, met à jour stats/feuille, donne le rôle."""
     guild = interaction.guild
 
-    # Détermine le bon salon de résultats
+    # Détermine le bon salon de résultats (toujours #results)
     is_high_result = earned_rank in HIGH_TIERS
-    if force_results_to_standard:
-        # Forcer l'envoi dans le salon results même pour les high tiers
-        results_channel = discord.utils.get(guild.text_channels, name="🏆┃results") or \
-                          discord.utils.get(guild.text_channels, name="results")
-    else:
-        if is_high_result:
-            results_channel = discord.utils.get(guild.text_channels, name="🏆┃high-results")
-        else:
-            results_channel = discord.utils.get(guild.text_channels, name="🏆┃results")
+    results_channel = discord.utils.get(guild.text_channels, name="🏆┃results") or \
+                      discord.utils.get(guild.text_channels, name="results")
 
     if not results_channel:
         # Pas de salon dédié -> ne rien faire pour éviter les erreurs visibles
@@ -1328,6 +1321,12 @@ async def on_interaction(interaction: discord.Interaction):
                     await log_queue_join(interaction.guild, interaction.user, region, len(waitlists[region]))
 
                     await update_waitlist_message(interaction.guild, region)
+
+                    # Ping testers in the region waitlist channel
+                    try:
+                        await ping_testers_in_waitlist_channel(interaction.guild, region, interaction.user)
+                    except Exception:
+                        pass
                     return
             embed = discord.Embed(title="❌ Invalid Region", description="Invalid waitlist region.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1956,10 +1955,11 @@ async def passeval(interaction: discord.Interaction):
         embed = discord.Embed(title="Error", description=f"An error occurred while moving/renaming the channel: {str(e)}", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="close", description="Close an eval channel with tier selection (Tester role required)")
-@app_commands.describe(tier="Tier earned (optional). If provided, closes immediately without menu")
+@bot.tree.command(name="close", description="Close an eval channel and post results (Tester role required)")
+@app_commands.describe(previous_tier="Previous tier before the test", earned_tier="Tier earned from the test")
 @app_commands.choices(
-    tier=[
+    previous_tier=[
+        app_commands.Choice(name="N/A", value="N/A"),
         app_commands.Choice(name="HT1", value="HT1"),
         app_commands.Choice(name="LT1", value="LT1"),
         app_commands.Choice(name="HT2", value="HT2"),
@@ -1970,10 +1970,21 @@ async def passeval(interaction: discord.Interaction):
         app_commands.Choice(name="LT4", value="LT4"),
         app_commands.Choice(name="HT5", value="HT5"),
         app_commands.Choice(name="LT5", value="LT5"),
-        app_commands.Choice(name="Only Close", value="only_close"),
+    ],
+    earned_tier=[
+        app_commands.Choice(name="HT1", value="HT1"),
+        app_commands.Choice(name="LT1", value="LT1"),
+        app_commands.Choice(name="HT2", value="HT2"),
+        app_commands.Choice(name="LT2", value="LT2"),
+        app_commands.Choice(name="HT3", value="HT3"),
+        app_commands.Choice(name="LT3", value="LT3"),
+        app_commands.Choice(name="HT4", value="HT4"),
+        app_commands.Choice(name="LT4", value="LT4"),
+        app_commands.Choice(name="HT5", value="HT5"),
+        app_commands.Choice(name="LT5", value="LT5"),
     ]
 )
-async def close(interaction: discord.Interaction, tier: str = None):
+async def close(interaction: discord.Interaction, previous_tier: str, earned_tier: str):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
@@ -1994,84 +2005,61 @@ async def close(interaction: discord.Interaction, tier: str = None):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # If a tier is provided, act immediately without menu
-    if tier:
-        # Try to find the tested player from active sessions mapping
-        player = None
-        for uid, cid in active_testing_sessions.items():
-            if cid == ch.id:
-                player = ch.guild.get_member(uid)
-                break
+    # Find tested player from active sessions mapping
+    player = None
+    for uid, cid in active_testing_sessions.items():
+        if cid == ch.id:
+            player = ch.guild.get_member(uid)
+            break
 
-        if tier == "only_close":
-            note = discord.Embed(title="Channel Closing",
-                                 description="This channel will be closed in 5 seconds…",
-                                 color=discord.Color.orange())
-            await interaction.response.send_message(embed=note, ephemeral=True)
-            try:
-                if player and player.id in active_testing_sessions:
-                    del active_testing_sessions[player.id]
-            except Exception:
-                pass
-            await asyncio.sleep(5)
-            try:
-                await ch.delete(reason=f"Eval closed without results by {interaction.user.name}")
-            except Exception:
-                pass
-            return
-
-        # Determine region from category
-        region = "NA"
-        if ch.category:
-            cname = ch.category.name.lower()
-            for r in ["na","eu","as","au"]:
-                if r in cname:
-                    region = r.upper()
-                    break
-
-        if player:
-            data = user_info.get(player.id, {}) if isinstance(user_info, dict) else {}
-            ign = data.get("ign", player.display_name)
-            try:
-                await post_tier_results(
-                    interaction=interaction,
-                    user=player,
-                    ign=ign,
-                    region=region,
-                    gamemode="Crystal",
-                    current_rank="N/A",
-                    earned_rank=tier,
-                    tester=interaction.user
-                )
-            except Exception as e:
-                print(f"DEBUG: /close immediate post_tier_results error: {e}")
-
-        confirm = discord.Embed(
-            title="Channel Closing",
-            description=f"Results posted for {tier}. This channel will be deleted in 5 seconds…",
-            color=discord.Color.green()
-        )
-        await interaction.response.send_message(embed=confirm, ephemeral=True)
-        try:
-            if player and player.id in active_testing_sessions:
-                del active_testing_sessions[player.id]
-        except Exception:
-            pass
-        await asyncio.sleep(5)
-        try:
-            await ch.delete(reason=f"Eval closed with tier {tier} by {interaction.user.name}")
-        except Exception:
-            pass
+    if not player:
+        await interaction.response.send_message(embed=discord.Embed(title="No Active Player", description="Could not determine the tested player for this channel.", color=discord.Color.red()), ephemeral=True)
         return
 
-    # Otherwise, show ephemeral picker menu
-    view = TierSelectView(ch, interaction.user)
-    embed = discord.Embed(
-        title="Select Tier Result or Close",
-        description="Choose the tier earned to post results, or select 'Only Close' to close without posting results. The channel will close 5 seconds after your selection.",
-        color=discord.Color.blurple()
+    # Determine region from category
+    region = "NA"
+    if ch.category:
+        cname = ch.category.name.lower()
+        for r in ["na","eu","as","au"]:
+            if r in cname:
+                region = r.upper()
+                break
+
+    data = user_info.get(player.id, {}) if isinstance(user_info, dict) else {}
+    ign = data.get("ign", player.display_name)
+
+    try:
+        await post_tier_results(
+            interaction=interaction,
+            user=player,
+            ign=ign,
+            region=region,
+            gamemode="Crystal",
+            current_rank=previous_tier,
+            earned_rank=earned_tier,
+            tester=interaction.user
+        )
+    except Exception as e:
+        print(f"DEBUG: /close post_tier_results error: {e}")
+
+    confirm = discord.Embed(
+        title="Channel Closing",
+        description=f"Results posted for {earned_tier}. This channel will be deleted in 5 seconds…",
+        color=discord.Color.green()
     )
-    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    await interaction.response.send_message(embed=confirm, ephemeral=True)
+
+    try:
+        if player.id in active_testing_sessions:
+            del active_testing_sessions[player.id]
+    except Exception:
+        pass
+
+    await asyncio.sleep(5)
+    try:
+        await ch.delete(reason=f"Eval closed with tier {earned_tier} by {interaction.user.name}")
+    except Exception:
+        pass
 
 @bot.tree.command(name="results", description="Post tier test results")
 @app_commands.describe(
@@ -2141,8 +2129,7 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
         gamemode=gamemode,
         current_rank=current_rank,
         earned_rank=earned_rank,
-        tester=interaction.user,
-        force_results_to_standard=True
+        tester=interaction.user
     )
 
     # Send confirmation message
@@ -2889,7 +2876,7 @@ class WaitlistModal(discord.ui.Modal):
         target_channel_text = waitlist_ch.mention if waitlist_ch else f"#waitlist-{region_input}"
 
         embed = discord.Embed(
-            description=f"You have been added to the {target_channel_text}.{cooldown_info}{extra_text}",
+            description=f"You have been added to the {target_channel_text}.",
             color=discord.Color.green())
         embed.set_footer(text="Only you can see this • Dismiss message")
 
@@ -3047,10 +3034,8 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
         return
 
     try:
-        staff_category = discord.utils.get(guild.categories, name="Staff")
-        if not staff_category:
-            staff_category = discord.utils.get(guild.categories, name="STAFF")
-
+        staff_category = discord.utils.get(guild.categories, name="Staff") or \
+                         discord.utils.get(guild.categories, name="STAFF")
         if not staff_category:
             print("DEBUG: Staff category not found for logging")
             return
@@ -3065,39 +3050,32 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
             print("DEBUG: Logs channel not found in Staff category")
             return
 
-        user_data = user_info.get(user.id, {})
-        ign = user_data.get('ign', 'N/A')
-        server = user_data.get('server', 'N/A')
-
-        is_booster = has_booster_role(user)
-        cooldown_type = f"VT • Server Booster ({BOOSTER_COOLDOWN_DAYS} days)" if is_booster else f"Regular ({REGULAR_COOLDOWN_DAYS} days)"
-
         embed = discord.Embed(
-            title="📋 Queue Join Log",
-            description=f"{user.mention} joined the {region.upper()} testing queue",
-            color=0x00ff00,
+            description=f"{user.mention} joined the queue",
+            color=discord.Color.blurple(),
             timestamp=datetime.datetime.now()
         )
-
-        embed.add_field(name="User", value=f"{user.mention}\n`{user.name}` (ID: {user.id})", inline=True)
-        embed.add_field(name="Region", value=region.upper(), inline=True)
-        embed.add_field(name="Position", value=f"#{position}", inline=True)
-        embed.add_field(name="IGN", value=ign, inline=True)
-        embed.add_field(name="Preferred Server", value=server, inline=True)
-        embed.add_field(name="Cooldown Type", value=cooldown_type, inline=True)
-        embed.add_field(name="Account Created", value=user.created_at.strftime("%Y-%m-%d"), inline=True)
-
-        if is_booster:
-            embed.add_field(name="Special Status", value="💎 **VT • Server Booster**", inline=True)
-
-        embed.set_thumbnail(url=user.display_avatar.url)
-        embed.set_footer(text="Queue Join Log", icon_url=guild.icon.url if guild.icon else None)
-
         await logs_channel.send(embed=embed)
-        print(f"DEBUG: Logged queue join for {user.name} ({cooldown_type}) in {region.upper()} region")
-
     except Exception as e:
         print(f"DEBUG: Error logging queue join: {e}")
+
+async def ping_testers_in_waitlist_channel(guild: discord.Guild, region: str, user: discord.Member):
+    try:
+        channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
+        if not channel:
+            return
+        role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester", "staff tester"]
+        mentions = []
+        for rn in role_names:
+            role = discord.utils.get(guild.roles, name=rn)
+            if role:
+                mentions.append(role.mention)
+        if not mentions:
+            return
+        text = f"{' '.join(mentions)} {user.mention} joined the queue."
+        await channel.send(content=text)
+    except Exception as e:
+        print(f"DEBUG: Error pinging testers in waitlist-{region}: {e}")
 
 async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
     """Send a 'Queue Position Updated' DM when a new user becomes #1 for a region."""
