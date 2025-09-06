@@ -1159,7 +1159,7 @@ async def on_message(message):
                 await message.delete()
 
                 link_type = "Discord server invite" if contains_discord_link else "YouTube video"
-                warning_message = f"⚠️ Your message in **{message.guild.name}** was deleted because it contained a {link_type} link. Please avoid sharing such links in the general chat."
+                warning_message = f"Your message in **{message.guild.name}** was deleted because it contained a {link_type} link. Please avoid sharing such links in the general chat."
 
                 try:
                     await message.author.send(warning_message)
@@ -1255,7 +1255,7 @@ async def on_interaction(interaction: discord.Interaction):
                 restricted_role = discord.utils.get(interaction.user.roles, name="Tierlist Restricted")
                 if restricted_role:
                     embed = discord.Embed(
-                        title="⛔ Access Denied",
+                        title="Access Denied",
                         description="You are currently restricted from entering the queue.",
                         color=discord.Color.red()
                     )
@@ -1271,7 +1271,7 @@ async def on_interaction(interaction: discord.Interaction):
                     # Blocage sécurité aussi dans les salons waitlist-...
                     if discord.utils.get(interaction.user.roles, name="Tierlist Restricted"):
                         embed = discord.Embed(
-                            title="⛔ Access Denied",
+                            title="Access Denied",
                             description="You are currently restricted from joining the queue.",
                             color=discord.Color.red()
                         )
@@ -1280,13 +1280,13 @@ async def on_interaction(interaction: discord.Interaction):
 
                     user_id = interaction.user.id
                     if user_id not in user_info:
-                        embed = discord.Embed(title="❌ Form Required", description="You must submit the form in <#📨┃request-test> before joining the queue.", color=discord.Color.red())
+                        embed = discord.Embed(title="Form Required", description="You must submit the form in <#📨┃request-test> before joining the queue.", color=discord.Color.red())
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
                     user_region = user_info[user_id]["region"].lower()
                     if user_region != region:
-                        embed = discord.Embed(title="❌ Wrong Region", description=f"Your form was submitted for {user_region.upper()} region, but you're trying to join the {region.upper()} queue.", color=discord.Color.red())
+                        embed = discord.Embed(title="Wrong Region", description=f"Your form was submitted for {user_region.upper()} region, but you're trying to join the {region.upper()} queue.", color=discord.Color.red())
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
@@ -1302,12 +1302,12 @@ async def on_interaction(interaction: discord.Interaction):
                             del active_testing_sessions[user_id]
 
                     if interaction.user.id in waitlists[region]:
-                        embed = discord.Embed(title="ℹ️ Already in Queue", description="You're already in the queue.", color=discord.Color.red())
+                        embed = discord.Embed(title="Already in Queue", description="You're already in the queue.", color=discord.Color.red())
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
                     if len(waitlists[region]) >= MAX_WAITLIST:
-                        embed = discord.Embed(title="⛔ Queue Full", description="Queue is full.", color=discord.Color.red())
+                        embed = discord.Embed(title="Queue Full", description="Queue is full.", color=discord.Color.red())
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
@@ -1322,14 +1322,14 @@ async def on_interaction(interaction: discord.Interaction):
                             pass
 
                     await interaction.response.send_message(
-                        f"✅ Successfully joined the {region.upper()} queue! You are position #{len(waitlists[region])} in line.",
+                        f"Successfully joined the {region.upper()} queue! You are position #{len(waitlists[region])} in line.",
                         ephemeral=True)
 
                     await log_queue_join(interaction.guild, interaction.user, region, len(waitlists[region]))
 
                     await update_waitlist_message(interaction.guild, region)
                     return
-            embed = discord.Embed(title="❌ Invalid Region", description="Invalid waitlist region.", color=discord.Color.red())
+            embed = discord.Embed(title="Invalid Region", description="Invalid waitlist region.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # === AUTHORIZATION COMMAND ===
@@ -1474,7 +1474,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     if not region:
         embed = discord.Embed(
-            title="❌ Invalid Channel", 
+            title="Invalid Channel", 
             description=f"This is not a valid waitlist channel. Channel name: {channel.name}\n\nValid channels are: waitlist-na, waitlist-eu, waitlist-as, waitlist-au", 
             color=discord.Color.red()
         )
@@ -1566,7 +1566,7 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
     
     if not region:
         embed = discord.Embed(
-            title="❌ Invalid Channel", 
+            title="Invalid Channel", 
             description=f"This is not a valid waitlist channel. Channel name: {channel.name}\n\nValid channels are: waitlist-na, waitlist-eu, waitlist-as, waitlist-au", 
             color=discord.Color.red()
         )
@@ -1593,7 +1593,7 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
         print(f"DEBUG: Successfully stopped queue for {region}")
     else:
         embed = discord.Embed(
-            title="❌ Not Active", 
+            title="Not Active", 
             description=f"You are not an active tester for {region.upper()}.", 
             color=discord.Color.red()
         )
@@ -1610,13 +1610,13 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         channel = interaction.channel
 
     if not has_tester_role(interaction.user):
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
+        embed = discord.Embed(title="Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     region = get_region_from_channel(channel.name)
     if not region:
-        embed = discord.Embed(title="❌ Invalid Channel", description="This is not a valid waitlist channel.", color=discord.Color.red())
+        embed = discord.Embed(title="Invalid Channel", description="This is not a valid waitlist channel.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
