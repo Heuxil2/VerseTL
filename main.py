@@ -13,8 +13,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('discord_bot')
 
 # Configuration
-TOKEN = 'YOUR_BOT_TOKEN_HERE'
-GUILD_ID = 123456789  # Remplacez par votre ID de serveur
+import os
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement
+load_dotenv()
+
+# Récupérer le token depuis les variables d'environnement
+TOKEN = os.getenv('DISCORD_TOKEN', 'YOUR_BOT_TOKEN_HERE')
+GUILD_ID = int(os.getenv('GUILD_ID', '123456789'))
 
 # Configuration des salons et rôles
 CHANNELS = {
