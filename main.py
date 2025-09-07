@@ -2,11 +2,7 @@
 import os
 import json
 import asyncio
-import datetime as dt
-from io import BytesIO
-import datetime
-import time
-import random
+from datetime import datetime, timedelta
 
 # Discord
 import discord
@@ -247,8 +243,8 @@ class DiscordBot(commands.Bot):
             if guild_id in self.bot_data.data['active_testers']:
                 to_remove = []
                 for user_id, info in self.bot_data.data['active_testers'][guild_id].items():
-                    timestamp = datetime.datetime.fromisoformat(info['timestamp'])
-                    if datetime.datetime.now() - timestamp > datetime.timedelta(hours=2):
+                    timestamp = datetime.fromisoformat(info['timestamp'])
+                    if datetime.now() - timestamp > timedelta(hours=2):
                         to_remove.append(int(user_id))
                 
                 for user_id in to_remove:
@@ -1336,13 +1332,8 @@ async def commands_list(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# === RUN BOT ===
-
+# Lancer le bot
 if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant: définis la variable d'environnement TOKEN.")
-    try:
-        keep_alive()
-    except Exception:
-        pass
-    run_with_backoff()
+    bot.run(TOKEN)
