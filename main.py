@@ -257,7 +257,8 @@ opened_queues = {}  # {guild_id: set(region)}
 active_testers = {}  # {guild_id: {"na": [], "eu": [], "as": [], "au": []}}
 user_info = {}  # {user_id: {"ign": str, "server": str, "region": str}}
 last_test_session = datetime.datetime.now()
-last_region_activity = {"na": None, "eu": None, "as": None, "au": None}
+# Last Test At par serveur
+last_region_activity = {}  # {guild_id: {"na": datetime|None, "eu": ..., "as": ..., "au": ...}}
 tester_stats = {}  # {user_id: test_count}
 STATS_FILE = "tester_stats.json"
 USER_INFO_FILE = "user_info.json"
@@ -271,6 +272,11 @@ def _ensure_guild_queue_state(guild_id: int):
         opened_queues[guild_id] = set()
     if guild_id not in active_testers:
         active_testers[guild_id] = {"na": [], "eu": [], "as": [], "au": []}
+
+def _ensure_guild_activity_state(guild_id: int):
+    """Ensure per-guild last activity structure exists."""
+    if guild_id not in last_region_activity:
+        last_region_activity[guild_id] = {"na": None, "eu": None, "as": None, "au": None}
 
 # ====== Export web vanilla.json (cache + tâches) ======
 VANILLA_CACHE = {
@@ -355,8 +361,12 @@ def get_brand_name(guild: discord.Guild | None = None) -> str:
     except Exception:
         return "VerseTL"
 
-# Track the current #1 we have already notified per region
-FIRST_IN_QUEUE_TRACKER = {"na": None, "eu": None, "as": None, "au": None}
+# Track the current #1 per guild and region
+FIRST_IN_QUEUE_TRACKER = {}  # {guild_id: {"na": None, "eu": None, "as": None, "au": None}}
+
+def _ensure_first_tracker(guild_id: int):
+    if guild_id not in FIRST_IN_QUEUE_TRACKER:
+        FIRST_IN_QUEUE_TRACKER[guild_id] = {"na": None, "eu": None, "as": None, "au": None}
 
 # Request channel configuration (robust lookup)
 REQUEST_CHANNEL_ID = os.getenv("REQUEST_CHANNEL_ID")  # optional: numeric channel ID
@@ -390,8 +400,22 @@ def _is_request_channel(channel: discord.abc.GuildChannel) -> bool:
             pass
     return _normalize_channel_name(channel.name) == _normalize_channel_name(REQUEST_CHANNEL_NAME)
 
+def _get_logs_channel(guild: discord.Guild) -> discord.TextChannel | None:
+    """
+    Trouve #logs par nom (normalisé 'logs'), sinon un salon contenant 'logs' dans Staff/STAFF.
+    """
+    for ch in guild.text_channels:
+        if _normalize_channel_name(ch.name) == "logs":
+            return ch
+    staff_category = discord.utils.get(guild.categories, name="Staff") or \
+                     discord.utils.get(guild.categories, name="STAFF")
+    if staff_category:
+        for ch in staff_category.text_channels:
+            if "logs" in ch.name.lower():
+                return ch
+    return None
+
 def has_booster_role(member: discord.Member) -> bool:
-    # Updated to check for "VT • Server Booster" instead of "Booster"
     booster_role = discord.utils.get(member.roles, name="VT • Server Booster")
     return booster_role is not None
 
@@ -426,10 +450,8 @@ def has_high_tier(member: discord.Member) -> bool:
     return False
 
 def is_tier_role_obj(role: discord.Role) -> bool:
-    # Priorité aux IDs si *_ROLE_IDS sont configurés
     if str(role.id) in ROLE_ID_RANKS:
         return True
-    # Sinon par nom (HT1..LT5)
     return _normalize_role_name(role.name) in NAME_RANKS
 
 def save_tester_stats():
@@ -503,41 +525,50 @@ def load_user_cooldowns():
         user_test_cooldowns = {}
 
 def save_last_region_activity():
+    """Sauvegarde par serveur (guild) la dernière activité par région."""
     try:
-        activity_data = {}
-        for region, last_time in last_region_activity.items():
-            activity_data[region] = last_time.isoformat() if last_time is not None else None
+        data = {}
+        for gid, regions in last_region_activity.items():
+            data[str(gid)] = {}
+            for region, last_time in regions.items():
+                data[str(gid)][region] = last_time.isoformat() if last_time is not None else None
 
-        with open(LAST_ACTIVITY_FILE, 'w') as f:
-            json.dump(activity_data, f, indent=2)
-        print(f"DEBUG: Saved last region activities to {LAST_ACTIVITY_FILE}")
+        with open(LAST_ACTIVITY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+        print(f"DEBUG: Saved last region activities (per guild) to {LAST_ACTIVITY_FILE}")
     except Exception as e:
         print(f"DEBUG: Error saving last region activities: {e}")
 
 def load_last_region_activity():
+    """Charge la dernière activité par serveur (guild) et par région."""
     global last_region_activity
     try:
+        last_region_activity = {}
         if os.path.exists(LAST_ACTIVITY_FILE):
-            with open(LAST_ACTIVITY_FILE, 'r') as f:
-                loaded_activities = json.load(f)
+            with open(LAST_ACTIVITY_FILE, 'r', encoding='utf-8') as f:
+                loaded = json.load(f)
 
-            for region in list(last_region_activity.keys()):
-                if region in loaded_activities and loaded_activities[region] is not None:
-                    try:
-                        last_region_activity[region] = datetime.datetime.fromisoformat(loaded_activities[region])
-                        time_ago = datetime.datetime.now() - last_region_activity[region]
-                        print(f"DEBUG: Loaded last activity for {region.upper()}: {time_ago.days} days ago")
-                    except (ValueError, TypeError) as e:
-                        print(f"DEBUG: Error parsing last activity for {region}: {e}")
-                        last_region_activity[region] = None
-                else:
-                    last_region_activity[region] = None
-
-            print(f"DEBUG: Loaded last region activities from {LAST_ACTIVITY_FILE}")
+            for gid_str, regions in loaded.items():
+                try:
+                    gid = int(gid_str)
+                except Exception:
+                    continue
+                last_region_activity[gid] = {"na": None, "eu": None, "as": None, "au": None}
+                for region in ["na", "eu", "as", "au"]:
+                    val = regions.get(region)
+                    if val:
+                        try:
+                            last_region_activity[gid][region] = datetime.datetime.fromisoformat(val)
+                            time_ago = datetime.datetime.now() - last_region_activity[gid][region]
+                            print(f"DEBUG: Loaded last activity for guild {gid} {region.upper()}: {time_ago.days} days ago")
+                        except (ValueError, TypeError) as e:
+                            print(f"DEBUG: Error parsing last activity for guild {gid} {region}: {e}")
+                            last_region_activity[gid][region] = None
         else:
             print(f"DEBUG: No existing last activity file found, starting fresh")
     except Exception as e:
         print(f"DEBUG: Error loading last region activities: {e}")
+        last_region_activity = {}
 
 def get_sheets_service():
     """Get Google Sheets service using service account credentials"""
@@ -672,7 +703,6 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
                       discord.utils.get(guild.text_channels, name="results")
 
     if not results_channel:
-        # Pas de salon dédié -> ne rien faire pour éviter les erreurs visibles
         return
 
     # Embed
@@ -732,6 +762,17 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     except Exception:
         pass
 
+    # MAJ "Last Test At" par serveur/région
+    try:
+        reg = (region or "").lower()
+        if reg in ("na", "eu", "as", "au") and guild:
+            _ensure_guild_activity_state(guild.id)
+            last_region_activity[guild.id][reg] = datetime.datetime.now()
+            save_last_region_activity()
+            print(f"DEBUG: Updated last test at for guild {guild.id} region {reg.upper()}")
+    except Exception as e:
+        print(f"DEBUG: Failed updating last test at: {e}")
+
     # Rebuild cache vanilla
     try:
         await rebuild_and_cache_vanilla()
@@ -748,19 +789,50 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
 # ============ DROPDOWN VIEW FOR /CLOSE ============
 
 class TierSelectView(discord.ui.View):
-    def __init__(self, channel: discord.TextChannel, tester: discord.Member):
+    """
+    Vue avec DEUX sélecteurs:
+    - Previous tier (optionnel, N/A par défaut)
+    - Earned tier (ou Only Close)
+    Ferme le salon 5 secondes après la sélection du "earned tier" ou "Only Close".
+    """
+    def __init__(self, channel: discord.TextChannel, tester: discord.Member, previous_tier: str = "N/A"):
         super().__init__(timeout=60)
         self.channel = channel
         self.tester = tester
         self.player = None
-        # Retrouve l'utilisateur testé via le mapping session -> channel
+        self.previous_tier_value = previous_tier or "N/A"
         for uid, cid in active_testing_sessions.items():
             if cid == channel.id:
                 self.player = channel.guild.get_member(uid)
                 break
 
     @discord.ui.select(
-        placeholder="Choose the tier earned or close only…",
+        placeholder="Select PREVIOUS tier (optional)",
+        options=[
+            discord.SelectOption(label="N/A", value="N/A"),
+            discord.SelectOption(label="HT1", value="HT1"),
+            discord.SelectOption(label="LT1", value="LT1"),
+            discord.SelectOption(label="HT2", value="HT2"),
+            discord.SelectOption(label="LT2", value="LT2"),
+            discord.SelectOption(label="HT3", value="HT3"),
+            discord.SelectOption(label="LT3", value="LT3"),
+            discord.SelectOption(label="HT4", value="HT4"),
+            discord.SelectOption(label="LT4", value="LT4"),
+            discord.SelectOption(label="HT5", value="HT5"),
+            discord.SelectOption(label="LT5", value="LT5"),
+        ],
+        min_values=1, max_values=1, row=0
+    )
+    async def previous_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+        self.previous_tier_value = select.values[0]
+        # Simple ack
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+
+    @discord.ui.select(
+        placeholder="Select EARNED tier or 'Only Close'",
         options=[
             discord.SelectOption(label="HT1", value="HT1"),
             discord.SelectOption(label="LT1", value="LT1"),
@@ -773,12 +845,12 @@ class TierSelectView(discord.ui.View):
             discord.SelectOption(label="HT5", value="HT5"),
             discord.SelectOption(label="LT5", value="LT5"),
             discord.SelectOption(label="Only Close", value="only_close", description="Close channel without posting results"),
-        ]
+        ],
+        min_values=1, max_values=1, row=1
     )
-    async def select_tier(self, interaction: discord.Interaction, select: discord.ui.Select):
+    async def earned_select(self, interaction: discord.Interaction, select: discord.ui.Select):
         earned = select.values[0]
-        
-        # Si "only close" est sélectionné, fermer sans poster de résultats
+
         if earned == "only_close":
             embed = discord.Embed(
                 title="Channel Closing",
@@ -786,14 +858,11 @@ class TierSelectView(discord.ui.View):
                 color=discord.Color.orange()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-            # Nettoie la session active
             try:
                 if self.player and self.player.id in active_testing_sessions:
                     del active_testing_sessions[self.player.id]
             except Exception:
                 pass
-            
             await asyncio.sleep(5)
             try:
                 await self.channel.delete(reason=f"Eval closed without results by {self.tester.name}")
@@ -801,12 +870,11 @@ class TierSelectView(discord.ui.View):
                 pass
             self.stop()
             return
-        
-        # Sinon, poster les résultats normalement
+
+        # Post results then close
         if self.player:
             data = user_info.get(self.player.id, {}) if isinstance(user_info, dict) else {}
             ign = data.get("ign", self.player.display_name)
-            # Trouve la région depuis la catégorie du salon
             region = "NA"
             if self.channel.category:
                 cname = self.channel.category.name.lower()
@@ -814,8 +882,6 @@ class TierSelectView(discord.ui.View):
                     if r in cname:
                         region = r.upper()
                         break
-
-            # Post résultats
             try:
                 await post_tier_results(
                     interaction=interaction,
@@ -823,22 +889,26 @@ class TierSelectView(discord.ui.View):
                     ign=ign,
                     region=region,
                     gamemode="Crystal",
-                    current_rank="N/A",
+                    current_rank=self.previous_tier_value or "N/A",
                     earned_rank=earned,
                     tester=self.tester
                 )
             except Exception as e:
                 print(f"DEBUG: post_tier_results error: {e}")
 
-        # Message et fermeture après 5s
         embed = discord.Embed(
             title="Channel Closing",
             description=f"Results posted for {earned}.\nThis channel will be deleted in 5 seconds…",
             color=discord.Color.green()
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        try:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        except discord.InteractionResponded:
+            try:
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            except Exception:
+                pass
 
-        # Nettoie la session active
         try:
             if self.player and self.player.id in active_testing_sessions:
                 del active_testing_sessions[self.player.id]
@@ -896,6 +966,10 @@ async def on_ready():
     load_user_info()
     load_last_region_activity()
 
+    for g in bot.guilds:
+        _ensure_guild_activity_state(g.id)
+        _ensure_first_tracker(g.id)
+
     global opened_queues, active_testers, waitlists, waitlist_message_ids, waitlist_messages, active_testing_sessions
     opened_queues.clear()
     active_testers.clear()
@@ -904,7 +978,7 @@ async def on_ready():
     waitlist_message_ids.clear()
     waitlist_messages.clear()
     active_testing_sessions.clear()
-    print("DEBUG: Cleared all opened queues, active testers, waitlists, message references, and active testing sessions on startup")
+    print("DEBUG: Cleared queue/tester/waitlist state on startup")
 
     # Register global check once
     global APP_CHECK_ADDED
@@ -978,7 +1052,7 @@ async def on_ready():
                 print(f"DEBUG: Could not purge request-test channel: {e}")
 
             await request_channel.send(embed=embed, view=view)
-            print(f"DEBUG: Created single request button in request-test channel with VT • Server Booster cooldown info")
+            print(f"DEBUG: Created single request button in request-test channel")
 
         for region in waitlists:
             channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
@@ -1322,7 +1396,7 @@ async def on_interaction(interaction: discord.Interaction):
 
                     await update_waitlist_message(interaction.guild, region)
 
-                    # Ping testers in the region waitlist channel
+                    # Ping testers in the region waitlist channel (uniquement testeurs actifs)
                     try:
                         await ping_testers_in_waitlist_channel(interaction.guild, region, interaction.user)
                     except Exception:
@@ -1513,9 +1587,10 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
     _ensure_guild_queue_state(interaction.guild.id)
     opened_queues[interaction.guild.id].add(region)
 
-    last_region_activity[region] = datetime.datetime.now()
+    _ensure_guild_activity_state(interaction.guild.id)
+    last_region_activity[interaction.guild.id][region] = datetime.datetime.now()
     save_last_region_activity()
-    print(f"DEBUG: Updated and saved last activity for {region.upper()}")
+    print(f"DEBUG: Updated and saved last activity for guild {interaction.guild.id} {region.upper()}")
 
     if interaction.user.id not in active_testers[interaction.guild.id][region]:
         active_testers[interaction.guild.id][region].append(interaction.user.id)
@@ -1646,7 +1721,6 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
     category = discord.utils.get(interaction.guild.categories, name=primary_category_name)
 
     if not category and target_high:
-        # fallback sur Eval si pas de catégorie High Eval
         category = discord.utils.get(interaction.guild.categories, name=f"Eval {region.upper()}")
 
     if not category:
@@ -1654,12 +1728,8 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # NOMMAGE NOUVEAU: Eval (nom discord) ou High-Eval-(nom discord)
     username = next_user.display_name
-    if target_high:
-        channel_name = f"High-Eval-{username}"
-    else:
-        channel_name = f"Eval {username}"
+    channel_name = f"High-Eval-{username}" if target_high else f"Eval {username}"
 
     overwrites = {
         interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
@@ -1725,7 +1795,6 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
-    # Only testers can use this command
     if not has_tester_role(interaction.user):
         embed = discord.Embed(
             title="❌ Tester Role Required",
@@ -1735,7 +1804,6 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # Must be used inside an eval channel (either eval- or high-eval-)
     channel = interaction.channel
     if not isinstance(channel, discord.TextChannel) or not (channel.name.startswith("Eval ") or channel.name.startswith("High-Eval-")):
         embed = discord.Embed(
@@ -1746,7 +1814,6 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # If the user already has an active session
     existing_channel_id = active_testing_sessions.get(member.id)
     if existing_channel_id:
         if existing_channel_id == channel.id:
@@ -1776,7 +1843,6 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
             )
             return
 
-    # Grant access to this channel
     try:
         await channel.set_permissions(member, read_messages=True, send_messages=True)
     except discord.Forbidden:
@@ -1800,7 +1866,6 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
         )
         return
 
-    # Remove from waitlists and update messages
     removed_regions = []
     for r, queue in waitlists.items():
         if member.id in queue:
@@ -1811,9 +1876,7 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
             except Exception:
                 pass
 
-    # Remove waitlist roles
     roles_to_remove = []
-    # Try infer region from category name ("Eval NA", "High Eval NA", etc.)
     target_regions = []
     if channel.category:
         cat_name = channel.category.name.lower()
@@ -1822,7 +1885,6 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
                 target_regions = [r]
                 break
     if not target_regions:
-        # If unknown, attempt cleanup for all regions
         target_regions = ["na", "eu", "as", "au"]
 
     for r in target_regions:
@@ -1848,13 +1910,9 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
         except Exception:
             pass
 
-    # Mark session as active
     active_testing_sessions[member.id] = channel.id
-
-    # Apply cooldown as after a tier test
     cooldown_days = apply_cooldown(member.id, member)
 
-    # Send welcome message
     welcome_region = target_regions[0] if target_regions else "unknown"
     try:
         await send_eval_welcome_message(channel, welcome_region, member, interaction.user)
@@ -1895,9 +1953,7 @@ async def passeval(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
     
-    # Check if channel name contains "eval" (case insensitive) to be more flexible
-    channel_name_lower = ch.name.lower()
-    if "eval" not in channel_name_lower:
+    if "eval" not in ch.name.lower():
         embed = discord.Embed(title="Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -1926,16 +1982,14 @@ async def passeval(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # Renommage: plus flexible pour différents patterns
     old = ch.name
     if old.lower().startswith("high-eval-"):
-        new_name = old  # déjà bon
+        new_name = old
     elif old.lower().startswith("eval "):
-        new_name = f"High-Eval-{old[5:]}"  # Remplace "Eval " par "High-Eval-"
+        new_name = f"High-Eval-{old[5:]}"
     elif old.lower().startswith("eval-"):
-        new_name = f"High-{old}"  # eval-xxx -> High-eval-xxx
+        new_name = f"High-{old}"
     else:
-        # autre pattern: on préfixe simplement
         new_name = f"High-Eval-{old}"
 
     try:
@@ -1956,7 +2010,7 @@ async def passeval(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="close", description="Close an eval channel and post results (Tester role required)")
-@app_commands.describe(previous_tier="Previous tier before the test", earned_tier="Tier earned from the test")
+@app_commands.describe(previous_tier="Previous tier before the test (optional)", earned_tier="Tier earned from the test (optional)")
 @app_commands.choices(
     previous_tier=[
         app_commands.Choice(name="N/A", value="N/A"),
@@ -1984,7 +2038,7 @@ async def passeval(interaction: discord.Interaction):
         app_commands.Choice(name="LT5", value="LT5"),
     ]
 )
-async def close(interaction: discord.Interaction, previous_tier: str, earned_tier: str):
+async def close(interaction: discord.Interaction, previous_tier: str | None = None, earned_tier: str | None = None):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
@@ -1999,13 +2053,12 @@ async def close(interaction: discord.Interaction, previous_tier: str, earned_tie
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
     
-    # Check if channel name contains "eval" to be more flexible
     if "eval" not in ch.name.lower():
         embed = discord.Embed(title="❌ Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # Find tested player from active sessions mapping
+    # Find tested player
     player = None
     for uid, cid in active_testing_sessions.items():
         if cid == ch.id:
@@ -2028,6 +2081,18 @@ async def close(interaction: discord.Interaction, previous_tier: str, earned_tie
     data = user_info.get(player.id, {}) if isinstance(user_info, dict) else {}
     ign = data.get("ign", player.display_name)
 
+    # Si earned_tier est absent -> Vue à 2 sélecteurs
+    if not earned_tier:
+        view = TierSelectView(channel=ch, tester=interaction.user, previous_tier=(previous_tier or "N/A"))
+        embed = discord.Embed(
+            title="Close Evaluation",
+            description="Select the previous tier (optional) and the earned tier, or choose 'Only Close'. The channel will be deleted 5 seconds after your choice.",
+            color=discord.Color.blurple()
+        )
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        return
+
+    # Sinon exécution directe
     try:
         await post_tier_results(
             interaction=interaction,
@@ -2035,7 +2100,7 @@ async def close(interaction: discord.Interaction, previous_tier: str, earned_tie
             ign=ign,
             region=region,
             gamemode="Crystal",
-            current_rank=previous_tier,
+            current_rank=(previous_tier or "N/A"),
             earned_rank=earned_tier,
             tester=interaction.user
         )
@@ -2120,7 +2185,6 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # Use the helper function (force posting into standard results channel)
     await post_tier_results(
         interaction=interaction,
         user=user,
@@ -2132,7 +2196,6 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
         tester=interaction.user
     )
 
-    # Send confirmation message
     confirmation_parts = [f"✅ Results posted for {user.mention}"]
     if earned_rank in HIGH_TIERS:
         confirmation_parts.append("🔥 **HIGH TIER RESULT** - Posted in results channel!")
@@ -2701,7 +2764,6 @@ async def buildtiers_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     try:
         built = await build_tiers(bot)
-        # Optionnel: synchroniser le cache exposé
         global VANILLA_CACHE
         VANILLA_CACHE = {
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -2764,7 +2826,6 @@ class WaitlistModal(discord.ui.Modal):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        # Blocage également ici si "Tierlist Restricted"
         if discord.utils.get(interaction.user.roles, name="Tierlist Restricted"):
             embed = discord.Embed(
                 title="⛔ Access Denied",
@@ -2784,9 +2845,6 @@ class WaitlistModal(discord.ui.Modal):
                 days = time_remaining.days
                 hours = time_remaining.seconds // 3600
                 minutes = (time_remaining.seconds % 3600) // 60
-
-                is_booster = has_booster_role(interaction.user)
-                cooldown_type = "VT • Server Booster (2 days)" if is_booster else "Regular (4 days)"
 
                 cooldown_embed = discord.Embed(
                     title="⏰ Cooldown Active",
@@ -2819,7 +2877,6 @@ class WaitlistModal(discord.ui.Modal):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        # Sauvegarde/MAJ des infos (toujours autorisée)
         existing = user_info.get(user_id)
         previous_region = (existing or {}).get("region")
         previous_ign = (existing or {}).get("ign")
@@ -2832,7 +2889,6 @@ class WaitlistModal(discord.ui.Modal):
         }
         save_user_info()
 
-        # Rôles d'accès aux salons de waitlist
         waitlist_role = discord.utils.get(
             interaction.guild.roles,
             name=f"Waitlist-{region_input.upper()}")
@@ -2851,27 +2907,11 @@ class WaitlistModal(discord.ui.Modal):
             except discord.Forbidden:
                 pass
 
-        # Message de confirmation
-        is_booster = has_booster_role(interaction.user)
-        cooldown_info = f"\n\n💎 **VT • Server Booster Perk:** You have a {BOOSTER_COOLDOWN_DAYS}-day cooldown instead of {REGULAR_COOLDOWN_DAYS} days!" if is_booster else f"\n\n⏰ **Cooldown:** {REGULAR_COOLDOWN_DAYS} days after test completion."
+        try:
+            await rebuild_and_cache_vanilla()
+        except Exception:
+            pass
 
-        changed_ign = (previous_ign and previous_ign != self.minecraft_ign.value)
-        changed_region = (previous_region and previous_region != region_input.upper())
-
-        extra = []
-        if changed_ign:
-            extra.append("✏️ Your IGN has been updated and will be reflected everywhere (leaderboard, exports) on the next refresh.")
-        if changed_region:
-            # Si dans la mauvaise queue, on le mentionne
-            user_regions = []
-            for r, queue in waitlists.items():
-                if interaction.user.id in queue:
-                    user_regions.append(r.upper())
-            if user_regions and region_input.upper() not in user_regions:
-                extra.append(f"🔁 You changed region to {region_input.upper()}. If you are queued in {', '.join(user_regions)}, use /leave then join <#waitlist-{region_input}>.")
-        extra_text = ("\n\n" + "\n".join(extra)) if extra else ""
-
-        # Mention the actual waitlist channel if present
         waitlist_ch = discord.utils.get(interaction.guild.text_channels, name=f"waitlist-{region_input}")
         target_channel_text = waitlist_ch.mention if waitlist_ch else f"#waitlist-{region_input}"
 
@@ -2879,12 +2919,6 @@ class WaitlistModal(discord.ui.Modal):
             description=f"You have been added to the {target_channel_text}.",
             color=discord.Color.green())
         embed.set_footer(text="Only you can see this • Dismiss message")
-
-        # Rebuild cache (pour refléter rapidement l'IGN)
-        try:
-            await rebuild_and_cache_vanilla()
-        except Exception:
-            pass
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -2905,7 +2939,6 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         waitlist_message_ids[guild.id] = {}
 
     tester_ids = []
-    # Per-guild testers/queues
     guild_queue = opened_queues.get(guild.id, set())
     guild_testers = active_testers.get(guild.id, {}).get(region, [])
     if region in guild_queue:
@@ -2923,7 +2956,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
 
     await maybe_notify_queue_top_change(guild, region)
 
-    region_last_active = last_region_activity.get(region)
+    region_last_active = last_region_activity.get(guild.id, {}).get(region)
     if region_last_active:
         timestamp_unix = int(region_last_active.timestamp())
         timestamp = f"<t:{timestamp_unix}:R>"
@@ -2973,10 +3006,10 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
             try:
                 stored_message = guild_msgs[region]
                 await stored_message.edit(content=ping_content, embed=embed, view=view)
-                print(f"DEBUG: Successfully edited stored message object for {region} in guild {guild.id}")
+                print(f"DEBUG: Successfully edited stored message for {region} in guild {guild.id}")
                 return
             except (discord.NotFound, discord.HTTPException) as e:
-                print(f"DEBUG: Stored message object invalid for {region} in guild {guild.id}: {e}")
+                print(f"DEBUG: Stored message invalid for {region} in guild {guild.id}: {e}")
                 del guild_msgs[region]
                 if region in guild_msg_ids:
                     del guild_msg_ids[region]
@@ -2987,7 +3020,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
                 fetched_message = await channel.fetch_message(message_id)
                 guild_msgs[region] = fetched_message
                 await fetched_message.edit(content=ping_content, embed=embed, view=view)
-                print(f"DEBUG: Successfully fetched and edited message {message_id} for {region} in guild {guild.id}")
+                print(f"DEBUG: Fetched and edited message {message_id} for {region} in guild {guild.id}")
                 return
             except discord.NotFound:
                 print(f"DEBUG: Message ID {guild_msg_ids[region]} not found for {region} in guild {guild.id}")
@@ -3007,7 +3040,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
             guild_msgs[region] = existing_message
             guild_msg_ids[region] = existing_message.id
             await existing_message.edit(content=ping_content, embed=embed, view=view)
-            print(f"DEBUG: Found and edited existing message {existing_message.id} for {region} in guild {guild.id}")
+            print(f"DEBUG: Edited existing message {existing_message.id} for {region} in guild {guild.id}")
 
             message_count = 0
             async for message in channel.history(limit=20):
@@ -3029,66 +3062,59 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         print(f"DEBUG: Error in update_waitlist_message for {region} in guild {guild.id}: {e}")
 
 async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str, position: int):
-    """Log when a user joins a queue to the logs channel in Staff category"""
+    """Poste dans #logs et ping uniquement le(s) testeur(s) actif(s) pour la région."""
     if not is_guild_authorized(getattr(guild, "id", None)):
         return
 
     try:
-        staff_category = discord.utils.get(guild.categories, name="Staff") or \
-                         discord.utils.get(guild.categories, name="STAFF")
-        if not staff_category:
-            print("DEBUG: Staff category not found for logging")
-            return
+        _ensure_guild_queue_state(guild.id)
+        testers = active_testers.get(guild.id, {}).get(region, []) or []
+        testers_mentions = " ".join(f"<@{tid}>" for tid in testers)
 
-        logs_channel = None
-        for channel in staff_category.text_channels:
-            if "logs" in channel.name.lower():
-                logs_channel = channel
-                break
-
+        logs_channel = _get_logs_channel(guild)
         if not logs_channel:
-            print("DEBUG: Logs channel not found in Staff category")
+            print("DEBUG: Logs channel not found; skipping #logs post")
             return
 
-        embed = discord.Embed(
-            description=f"{user.mention} joined the queue",
-            color=discord.Color.blurple(),
-            timestamp=datetime.datetime.now()
-        )
-        await logs_channel.send(embed=embed)
+        if testers_mentions:
+            content = f"{testers_mentions} {user.mention} joined the queue."
+        else:
+            content = f"{user.mention} joined the queue."
+
+        await logs_channel.send(content=content)
     except Exception as e:
         print(f"DEBUG: Error logging queue join: {e}")
 
 async def ping_testers_in_waitlist_channel(guild: discord.Guild, region: str, user: discord.Member):
+    """Ping uniquement le(s) testeur(s) actifs de la région dans waitlist-<region>."""
     try:
         channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
         if not channel:
             return
-        role_names = ["Tester", "Verified Tester", "Staff Tester", "tester", "verified tester", "staff tester"]
-        mentions = []
-        for rn in role_names:
-            role = discord.utils.get(guild.roles, name=rn)
-            if role:
-                mentions.append(role.mention)
-        if not mentions:
+        _ensure_guild_queue_state(guild.id)
+        testers = active_testers.get(guild.id, {}).get(region, []) or []
+        if not testers:
             return
-        text = f"{' '.join(mentions)} {user.mention} joined the queue."
+        mentions = " ".join(f"<@{tid}>" for tid in testers)
+        text = f"{mentions} {user.mention} joined the queue."
         await channel.send(content=text)
     except Exception as e:
         print(f"DEBUG: Error pinging testers in waitlist-{region}: {e}")
 
 async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
-    """Send a 'Queue Position Updated' DM when a new user becomes #1 for a region."""
+    """Send a 'Queue Position Updated' DM when a new user becomes #1 for a region (per guild)."""
     if not is_guild_authorized(getattr(guild, "id", None)):
         return
+
+    _ensure_first_tracker(guild.id)
 
     top_list = waitlists.get(region, [])
     current_top_id = top_list[0] if top_list else None
 
-    if FIRST_IN_QUEUE_TRACKER.get(region) == current_top_id:
+    if FIRST_IN_QUEUE_TRACKER[guild.id].get(region) == current_top_id:
         return
 
-    FIRST_IN_QUEUE_TRACKER[region] = current_top_id
+    FIRST_IN_QUEUE_TRACKER[guild.id][region] = current_top_id
 
     if current_top_id is None:
         return
@@ -3105,7 +3131,7 @@ async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
         )
         embed.set_author(name=get_brand_name(guild), icon_url=get_brand_logo_url(guild))
         await member.send(embed=embed)
-        print(f"DEBUG: Sent 'Queue Position Updated' DM to {member.name} for {region.upper()} region")
+        print(f"DEBUG: Sent 'Queue Position Updated' DM to {member.name} for {region.upper()} region (guild {guild.id})")
     except discord.Forbidden:
         print(f"DEBUG: Could not DM {member} (privacy settings)")
     except Exception as e:
@@ -3145,7 +3171,7 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
     if not channel:
         return
 
-    region_last_active = last_region_activity.get(region)
+    region_last_active = last_region_activity.get(guild.id, {}).get(region)
     if region_last_active:
         timestamp_unix = int(region_last_active.timestamp())
         timestamp = f"<t:{timestamp_unix}:R>"
@@ -3213,7 +3239,6 @@ async def update_leaderboard(guild: discord.Guild):
 
         embed = discord.Embed(title="Tester Leaderboard", description="\n".join(lines) or "*No data*", color=discord.Color.gold())
 
-        # Try to edit the last leaderboard embed; otherwise send a new one
         async for msg in channel.history(limit=20):
             if msg.author == guild.me and msg.embeds and (msg.embeds[0].title or "") == "Tester Leaderboard":
                 await msg.edit(embed=embed)
