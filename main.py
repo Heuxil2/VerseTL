@@ -1,29 +1,41 @@
+# Standard library
+import os
+import json
+import asyncio
+import datetime as dt
+from io import BytesIO
+import datetime
+import time
+import random
+
+# Discord
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import asyncio
-from datetime import datetime, timedelta
-import json
-import os
-from typing import Optional, Dict, List, Set
-import logging
+from discord.errors import HTTPException
 
-# Configuration du logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger('discord_bot')
-
-# Configuration
-import os
+# Env/hosting
 from dotenv import load_dotenv
 
-# Charger les variables d'environnement
+# Google APIs (optionnels)
+try:
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+except Exception:
+    service_account = None
+    build = None
+
+    class HttpError(Exception):
+        pass
+
+# ============ CONFIG & AUTHORIZATION ============
+
 load_dotenv()
+TOKEN = os.getenv("TOKEN")
+GUILD_ID = int(os.getenv("GUILD_ID", "0")) if os.getenv("GUILD_ID") else None
 
-# Récupérer le token depuis les variables d'environnement
-TOKEN = os.getenv('DISCORD_TOKEN', 'YOUR_BOT_TOKEN_HERE')
-GUILD_ID = int(os.getenv('GUILD_ID', '123456789'))
-
-# Configuration des salons et rôles
+# Configuration
 CHANNELS = {
     'request_test': 'request-test',
     'logs': 'logs',
@@ -60,7 +72,6 @@ TIERS = ['Iron', 'Bronze', 'Silver', 'Gold', 'Platinum', 'Emerald', 'Diamond', '
 # File de données
 DATA_FILE = 'bot_data.json'
 
-
 class BotData:
     """Gestion des données persistantes du bot"""
     
@@ -91,7 +102,7 @@ class BotData:
         with open(DATA_FILE, 'w') as f:
             json.dump(self.data, f, indent=2)
     
-    def get_guild_waitlist(self, guild_id: int, region: str) -> List[int]:
+    def get_guild_waitlist(self, guild_id: int, region: str) -> list[int]:
         guild_id = str(guild_id)
         if guild_id not in self.data['waitlists']:
             self.data['waitlists'][guild_id] = {}
@@ -115,7 +126,7 @@ class BotData:
             return True
         return False
     
-    def get_user_position(self, guild_id: int, region: str, user_id: int) -> Optional[int]:
+    def get_user_position(self, guild_id: int, region: str, user_id: int) -> int | None:
         waitlist = self.get_guild_waitlist(guild_id, region)
         if user_id in waitlist:
             return waitlist.index(user_id) + 1
@@ -139,7 +150,7 @@ class BotData:
                 del self.data['active_testers'][guild_id][user_id]
                 self.save_data()
     
-    def get_active_testers(self, guild_id: int, region: str = None) -> List[int]:
+    def get_active_testers(self, guild_id: int, region: str = None) -> list[int]:
         guild_id = str(guild_id)
         if guild_id not in self.data['active_testers']:
             return []
@@ -163,6 +174,91 @@ class BotData:
         self.data['first_in_queue_notified'][guild_id][region] = notified
         self.save_data()
 
+# ============ DISCORD SETUP ============
+
+intents = discord.Intents.all()
+
+class DiscordBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix='!', intents=intents)
+        self.bot_data = BotData()
+        self.synced = False
+    
+    async def setup_hook(self):
+        """Configuration initiale du bot"""
+        # Ajouter la vue persistante
+        self.add_view(RequestWaitlistView())
+        
+        # Synchroniser les commandes
+        if not self.synced:
+            await self.tree.sync()
+            self.synced = True
+            print("DEBUG: Slash commands synced")
+    
+    async def on_ready(self):
+        print(f'{self.user.name} has connected to Discord!')
+        
+        # Enregistrer la vue persistante au démarrage
+        self.add_view(RequestWaitlistView())
+        
+        # Setup initial des canaux
+        for guild in self.guilds:
+            await self.setup_guild_channels(guild)
+        
+        # Démarrer les tâches périodiques
+        if not self.cleanup_inactive_testers.is_running():
+            self.cleanup_inactive_testers.start()
+    
+    async def setup_guild_channels(self, guild: discord.Guild):
+        """Configuration des canaux pour un serveur"""
+        # Vérifier/créer le canal request-test
+        request_channel = discord.utils.get(guild.text_channels, name=CHANNELS['request_test'])
+        if request_channel:
+            # Purger les anciens messages et poster le nouveau
+            await request_channel.purge(limit=100)
+            
+            embed = discord.Embed(
+                title="🎮 Join Testing Waitlist",
+                description=(
+                    "Click the button below to join the testing waitlist.\n\n"
+                    "**Requirements:**\n"
+                    "• Valid League of Legends account\n"
+                    "• Available for testing session\n"
+                    "• Discord voice enabled\n\n"
+                    "**How it works:**\n"
+                    "1. Click 'Enter Waitlist'\n"
+                    "2. Fill in your information\n"
+                    "3. Wait for a tester to contact you\n"
+                    "4. Join voice channel when invited"
+                ),
+                color=discord.Color.blue()
+            )
+            embed.set_footer(text="Bot created by Frédéric")
+            
+            # Utiliser la vue persistante
+            view = RequestWaitlistView()
+            await request_channel.send(embed=embed, view=view)
+    
+    @tasks.loop(hours=1)
+    async def cleanup_inactive_testers(self):
+        """Nettoyer les testeurs inactifs après 2 heures"""
+        for guild in self.guilds:
+            guild_id = str(guild.id)
+            if guild_id in self.bot_data.data['active_testers']:
+                to_remove = []
+                for user_id, info in self.bot_data.data['active_testers'][guild_id].items():
+                    timestamp = datetime.datetime.fromisoformat(info['timestamp'])
+                    if datetime.datetime.now() - timestamp > datetime.timedelta(hours=2):
+                        to_remove.append(int(user_id))
+                
+                for user_id in to_remove:
+                    self.bot_data.remove_active_tester(guild.id, user_id)
+                    print(f"DEBUG: Removed inactive tester {user_id} from guild {guild.id}")
+
+# Initialisation du bot
+bot = DiscordBot()
+
+# ============ VIEWS ============
 
 class WaitlistModal(discord.ui.Modal, title='Join Waitlist'):
     """Modal pour rejoindre la liste d'attente"""
@@ -259,7 +355,7 @@ class WaitlistModal(discord.ui.Modal, title='Join Waitlist'):
             await logs_channel.send(embed=embed)
     
     async def post_to_waitlist_channel(self, guild: discord.Guild, user: discord.User, region: str, position: int):
-        """Poster dans le canal waitlist spécifique à la région"""
+        """Poster dans le canal waitlist spécifique à la région - SANS ping des testeurs"""
         channel_name = f'waitlist-{region.lower()}'
         waitlist_channel = discord.utils.get(guild.text_channels, name=channel_name)
         
@@ -284,7 +380,6 @@ class WaitlistModal(discord.ui.Modal, title='Join Waitlist'):
                 bot_data.set_first_in_queue_notified(guild.id, region, True)
             
             await waitlist_channel.send(embed=embed)
-
 
 class RequestWaitlistView(discord.ui.View):
     """Vue persistante pour le bouton Enter Waitlist"""
@@ -315,94 +410,6 @@ class RequestWaitlistView(discord.ui.View):
         modal = WaitlistModal(interaction.client)
         await interaction.response.send_modal(modal)
 
-
-class DiscordBot(commands.Bot):
-    def __init__(self):
-        intents = discord.Intents.default()
-        intents.message_content = True
-        intents.members = True
-        intents.voice_states = True
-        
-        super().__init__(command_prefix='!', intents=intents)
-        self.bot_data = BotData()
-        self.synced = False
-    
-    async def setup_hook(self):
-        """Configuration initiale du bot"""
-        # Ajouter la vue persistante
-        self.add_view(RequestWaitlistView())
-        
-        # Synchroniser les commandes
-        if not self.synced:
-            await self.tree.sync()
-            self.synced = True
-            logger.info("Slash commands synced")
-    
-    async def on_ready(self):
-        logger.info(f'{self.user} has connected to Discord!')
-        
-        # Enregistrer la vue persistante au démarrage
-        self.add_view(RequestWaitlistView())
-        
-        # Setup initial des canaux
-        for guild in self.guilds:
-            await self.setup_guild_channels(guild)
-        
-        # Démarrer les tâches périodiques
-        if not self.cleanup_inactive_testers.is_running():
-            self.cleanup_inactive_testers.start()
-    
-    async def setup_guild_channels(self, guild: discord.Guild):
-        """Configuration des canaux pour un serveur"""
-        # Vérifier/créer le canal request-test
-        request_channel = discord.utils.get(guild.text_channels, name=CHANNELS['request_test'])
-        if request_channel:
-            # Purger les anciens messages et poster le nouveau
-            await request_channel.purge(limit=100)
-            
-            embed = discord.Embed(
-                title="🎮 Join Testing Waitlist",
-                description=(
-                    "Click the button below to join the testing waitlist.\n\n"
-                    "**Requirements:**\n"
-                    "• Valid League of Legends account\n"
-                    "• Available for testing session\n"
-                    "• Discord voice enabled\n\n"
-                    "**How it works:**\n"
-                    "1. Click 'Enter Waitlist'\n"
-                    "2. Fill in your information\n"
-                    "3. Wait for a tester to contact you\n"
-                    "4. Join voice channel when invited"
-                ),
-                color=discord.Color.blue()
-            )
-            embed.set_footer(text="Bot created by Frédéric")
-            
-            # Utiliser la vue persistante
-            view = RequestWaitlistView()
-            await request_channel.send(embed=embed, view=view)
-    
-    @tasks.loop(hours=1)
-    async def cleanup_inactive_testers(self):
-        """Nettoyer les testeurs inactifs après 2 heures"""
-        for guild in self.guilds:
-            guild_id = str(guild.id)
-            if guild_id in self.bot_data.data['active_testers']:
-                to_remove = []
-                for user_id, info in self.bot_data.data['active_testers'][guild_id].items():
-                    timestamp = datetime.fromisoformat(info['timestamp'])
-                    if datetime.now() - timestamp > timedelta(hours=2):
-                        to_remove.append(int(user_id))
-                
-                for user_id in to_remove:
-                    self.bot_data.remove_active_tester(guild.id, user_id)
-                    logger.info(f"Removed inactive tester {user_id} from guild {guild.id}")
-
-
-# Initialisation du bot
-bot = DiscordBot()
-
-
 # ====== COMMANDES SLASH ======
 
 @bot.tree.command(name='info', description='Information about the bot')
@@ -419,7 +426,6 @@ async def info(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
-
 @bot.tree.command(name='support', description='Get support server link')
 async def support(interaction: discord.Interaction):
     embed = discord.Embed(
@@ -434,7 +440,6 @@ async def support(interaction: discord.Interaction):
     )
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
-
 
 @bot.tree.command(name='queue', description='Check your position in the waitlist')
 async def queue(interaction: discord.Interaction):
@@ -461,7 +466,6 @@ async def queue(interaction: discord.Interaction):
         "You are not in any waitlist. Use the button in #request-test to join.",
         ephemeral=True
     )
-
 
 @bot.tree.command(name='leave', description='Leave the waitlist')
 async def leave(interaction: discord.Interaction):
@@ -501,7 +505,6 @@ async def leave(interaction: discord.Interaction):
             "You are not in any waitlist.",
             ephemeral=True
         )
-
 
 @bot.tree.command(name='next', description='[Tester] Get the next person in queue')
 @app_commands.describe(region='Region to get next person from')
@@ -585,15 +588,14 @@ async def next_in_queue(interaction: discord.Interaction, region: str):
         embed.add_field(name="Region", value=region, inline=True)
         await logs_channel.send(embed=embed)
 
-
 @bot.tree.command(name='close', description='[Tester] Close the testing session')
 @app_commands.describe(
     previous_tier='Previous tier of the tested player',
     earned_tier='New tier earned by the player'
 )
 async def close(interaction: discord.Interaction, 
-                previous_tier: Optional[str] = None, 
-                earned_tier: Optional[str] = None):
+                previous_tier: str | None = None, 
+                earned_tier: str | None = None):
     # Vérifier les permissions
     tester_role = discord.utils.get(interaction.guild.roles, name=ROLES['tester'])
     if not tester_role or tester_role not in interaction.user.roles:
@@ -697,7 +699,6 @@ async def close(interaction: discord.Interaction,
             except:
                 pass
 
-
 @bot.tree.command(name='waitlist', description='[Admin] View the waitlist for a region')
 @app_commands.describe(region='Region to view waitlist for')
 async def view_waitlist(interaction: discord.Interaction, region: str):
@@ -750,7 +751,6 @@ async def view_waitlist(interaction: discord.Interaction, region: str):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-
 @bot.tree.command(name='clear_waitlist', description='[Admin] Clear a region waitlist')
 @app_commands.describe(region='Region to clear waitlist for')
 async def clear_waitlist(interaction: discord.Interaction, region: str):
@@ -802,7 +802,6 @@ async def clear_waitlist(interaction: discord.Interaction, region: str):
         ephemeral=True
     )
 
-
 # ====== COMMANDES DE MODÉRATION ======
 
 @bot.tree.command(name='ban', description='Ban a member from the server')
@@ -810,7 +809,7 @@ async def clear_waitlist(interaction: discord.Interaction, region: str):
     member='The member to ban',
     reason='Reason for the ban'
 )
-async def ban(interaction: discord.Interaction, member: discord.Member, reason: Optional[str] = None):
+async def ban(interaction: discord.Interaction, member: discord.Member, reason: str | None = None):
     # Vérifier les permissions
     if not interaction.user.guild_permissions.ban_members:
         await interaction.response.send_message(
@@ -851,13 +850,12 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
             ephemeral=True
         )
 
-
 @bot.tree.command(name='kick', description='Kick a member from the server')
 @app_commands.describe(
     member='The member to kick',
     reason='Reason for the kick'
 )
-async def kick(interaction: discord.Interaction, member: discord.Member, reason: Optional[str] = None):
+async def kick(interaction: discord.Interaction, member: discord.Member, reason: str | None = None):
     # Vérifier les permissions
     if not interaction.user.guild_permissions.kick_members:
         await interaction.response.send_message(
@@ -898,13 +896,12 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
             ephemeral=True
         )
 
-
 @bot.tree.command(name='mute', description='Mute a member')
 @app_commands.describe(
     member='The member to mute',
     reason='Reason for the mute'
 )
-async def mute(interaction: discord.Interaction, member: discord.Member, reason: Optional[str] = None):
+async def mute(interaction: discord.Interaction, member: discord.Member, reason: str | None = None):
     # Vérifier les permissions
     if not interaction.user.guild_permissions.moderate_members:
         await interaction.response.send_message(
@@ -970,7 +967,6 @@ async def mute(interaction: discord.Interaction, member: discord.Member, reason:
             ephemeral=True
         )
 
-
 @bot.tree.command(name='unmute', description='Unmute a member')
 @app_commands.describe(member='The member to unmute')
 async def unmute(interaction: discord.Interaction, member: discord.Member):
@@ -1020,13 +1016,12 @@ async def unmute(interaction: discord.Interaction, member: discord.Member):
             ephemeral=True
         )
 
-
 @bot.tree.command(name='warn', description='Warn a member')
 @app_commands.describe(
     member='The member to warn',
     reason='Reason for the warning'
 )
-async def warn(interaction: discord.Interaction, member: discord.Member, reason: Optional[str] = None):
+async def warn(interaction: discord.Interaction, member: discord.Member, reason: str | None = None):
     # Vérifier les permissions
     if not interaction.user.guild_permissions.moderate_members:
         await interaction.response.send_message(
@@ -1077,7 +1072,6 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
     if logs_channel:
         await logs_channel.send(embed=embed)
 
-
 @bot.tree.command(name='slowmode', description='Set slowmode for a channel')
 @app_commands.describe(seconds='Slowmode delay in seconds (0 to disable)')
 async def slowmode(interaction: discord.Interaction, seconds: int):
@@ -1123,10 +1117,9 @@ async def slowmode(interaction: discord.Interaction, seconds: int):
             ephemeral=True
         )
 
-
 @bot.tree.command(name='lockdown', description='Lock a channel')
 @app_commands.describe(channel='Channel to lock (current channel if not specified)')
-async def lockdown(interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+async def lockdown(interaction: discord.Interaction, channel: discord.TextChannel | None = None):
     # Vérifier les permissions
     if not interaction.user.guild_permissions.manage_channels:
         await interaction.response.send_message(
@@ -1173,10 +1166,9 @@ async def lockdown(interaction: discord.Interaction, channel: Optional[discord.T
             ephemeral=True
         )
 
-
 @bot.tree.command(name='unlock', description='Unlock a channel')
 @app_commands.describe(channel='Channel to unlock (current channel if not specified)')
-async def unlock(interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+async def unlock(interaction: discord.Interaction, channel: discord.TextChannel | None = None):
     # Vérifier les permissions
     if not interaction.user.guild_permissions.manage_channels:
         await interaction.response.send_message(
@@ -1222,7 +1214,6 @@ async def unlock(interaction: discord.Interaction, channel: Optional[discord.Tex
             ephemeral=True
         )
 
-
 # ====== COMMANDES D'INFORMATION ======
 
 @bot.tree.command(name='serverinfo', description='Display server information')
@@ -1256,10 +1247,9 @@ async def serverinfo(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
-
 @bot.tree.command(name='userinfo', description='Display user information')
 @app_commands.describe(member='The member to get info about (yourself if not specified)')
-async def userinfo(interaction: discord.Interaction, member: Optional[discord.Member] = None):
+async def userinfo(interaction: discord.Interaction, member: discord.Member | None = None):
     member = member or interaction.user
     
     embed = discord.Embed(
@@ -1294,7 +1284,6 @@ async def userinfo(interaction: discord.Interaction, member: Optional[discord.Me
         embed.add_field(name="Warnings", value=warnings, inline=True)
     
     await interaction.response.send_message(embed=embed)
-
 
 @bot.tree.command(name='commands', description='Display all available commands')
 async def commands_list(interaction: discord.Interaction):
@@ -1347,7 +1336,13 @@ async def commands_list(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+# === RUN BOT ===
 
-# Lancer le bot
 if __name__ == "__main__":
-    bot.run(TOKEN)
+    if not TOKEN:
+        raise RuntimeError("TOKEN manquant: définis la variable d'environnement TOKEN.")
+    try:
+        keep_alive()
+    except Exception:
+        pass
+    run_with_backoff()
