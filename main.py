@@ -1,8 +1,11 @@
-# Standard library
 import os
 import json
 import asyncio
-from datetime import datetime, timedelta
+import datetime as dt
+from io import BytesIO
+import datetime
+import time
+import random
 
 # Discord
 import discord
@@ -12,6 +15,7 @@ from discord.errors import HTTPException
 
 # Env/hosting
 from dotenv import load_dotenv
+from keep_alive import keep_alive, register_vanilla_callback
 
 # Google APIs (optionnels)
 try:
@@ -791,3 +795,5 @@ if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("TOKEN manquant: définis la variable d'environnement TOKEN.")
     bot.run(TOKEN)
+
+
