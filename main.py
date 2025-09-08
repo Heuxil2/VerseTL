@@ -706,7 +706,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
         return
 
     # Embed
-    embed_color = 0x00ff00 if is_high_result else 0xff0000
+    embed_color = 0xff0000 if is_high_result else 0xff0000
     embed = discord.Embed(title=f"{ign}'s Test Results", color=embed_color)
     title_prefix = "🔥 **HIGH TIER** 🔥\n" if is_high_result else ""
     embed.description = (
@@ -719,7 +719,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     )
     embed.set_thumbnail(url=f"https://mc-heads.net/head/{ign}/100")
 
-    sent = await results_channel.send(content=user.mention, embed=embed)
+    sent = await results_channel.send(content=user.mention, embed=embed)a
 
     try:
         for e in (["👑", "🥳", "😱", "😭", "😂", "💀"] if is_high_result else ["👑", "🥳", "😱", "😭", "😂", "💀"]):
@@ -1477,7 +1477,7 @@ async def leave(interaction: discord.Interaction):
         embed = discord.Embed(title="ℹ️ Not in Queue", description="You are not in any waitlist.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="removecooldown", description="Remove a user's cooldown before testing")
+@bot.tree.command(name="cdreset", description="Remove a user's cooldown before testing")
 @app_commands.describe(member="Member to clear cooldown for")
 async def removecooldown(interaction: discord.Interaction, member: discord.Member):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
