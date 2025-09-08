@@ -1347,13 +1347,13 @@ async def on_interaction(interaction: discord.Interaction):
 
                     user_id = interaction.user.id
                     if user_id not in user_info:
-                        embed = discord.Embed(title="❌ Form Required", description="You must submit the form in <#📨┃request-test> before joining the queue.", color=discord.Color.red())
+                        embed = discord.Embed(title="Form Required", description="You must submit the form in #📨┃request-test before joining the queue.", color=discord.Color.red())
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
                     user_region = user_info[user_id]["region"].lower()
                     if user_region != region:
-                        embed = discord.Embed(title="❌ Wrong Region", description=f"Your form was submitted for {user_region.upper()} region, but you're trying to join the {region.upper()} queue.", color=discord.Color.red())
+                        embed = discord.Embed(title="Wrong Region", description=f"Your form was submitted for {user_region.upper()} region, but you're trying to join the {region.upper()} queue.", color=discord.Color.red())
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
@@ -1362,14 +1362,14 @@ async def on_interaction(interaction: discord.Interaction):
                         existing_channel = interaction.guild.get_channel(existing_channel_id)
 
                         if existing_channel:
-                            embed = discord.Embed(title="⚠️ Active Session Exists", description=f"You already have an active testing session in {existing_channel.mention}. Please complete that test first.", color=discord.Color.red())
+                            embed = discord.Embed(title="Active Session Exists", description=f"You already have an active testing session in {existing_channel.mention}. Please complete that test first.", color=discord.Color.red())
                             await interaction.response.send_message(embed=embed, ephemeral=True)
                             return
                         else:
                             del active_testing_sessions[user_id]
 
                     if interaction.user.id in waitlists[region]:
-                        embed = discord.Embed(title="ℹ️ Already in Queue", description="You're already in the queue.", color=discord.Color.red())
+                        embed = discord.Embed(title="ℹAlready in Queue", description="You're already in the queue.", color=discord.Color.red())
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
@@ -1389,7 +1389,7 @@ async def on_interaction(interaction: discord.Interaction):
                             pass
 
                     await interaction.response.send_message(
-                        f"✅ Successfully joined the {region.upper()} queue! You are position #{len(waitlists[region])} in line.",
+                        f"Successfully joined the {region.upper()} queue! You are position #{len(waitlists[region])} in line.",
                         ephemeral=True)
 
                     await log_queue_join(interaction.guild, interaction.user, region, len(waitlists[region]))
@@ -1402,7 +1402,7 @@ async def on_interaction(interaction: discord.Interaction):
                     except Exception:
                         pass
                     return
-            embed = discord.Embed(title="❌ Invalid Region", description="Invalid waitlist region.", color=discord.Color.red())
+            embed = discord.Embed(title="Invalid Region", description="Invalid waitlist region.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # === AUTHORIZATION COMMAND ===
@@ -1474,7 +1474,7 @@ async def leave(interaction: discord.Interaction):
         regions_list = ", ".join(region.upper() for region in left_regions)
         await interaction.response.send_message(f"You left the following waitlists: {regions_list}", ephemeral=True)
     else:
-        embed = discord.Embed(title="ℹ️ Not in Queue", description="You are not in any waitlist.", color=discord.Color.red())
+        embed = discord.Embed(title="Not in Queue", description="You are not in any waitlist.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="removecooldown", description="Remove a user's cooldown before testing")
@@ -1504,7 +1504,7 @@ async def removecooldown(interaction: discord.Interaction, member: discord.Membe
     if had_cooldown:
         await interaction.response.send_message(
             embed=discord.Embed(
-                title="✅ Cooldown Removed",
+                title="Cooldown Removed",
                 description=f"The testing cooldown for {member.mention} has been cleared.",
                 color=discord.Color.green()
             ),
@@ -1513,7 +1513,7 @@ async def removecooldown(interaction: discord.Interaction, member: discord.Membe
     else:
         await interaction.response.send_message(
             embed=discord.Embed(
-                title="ℹ️ No Active Cooldown",
+                title="No Active Cooldown",
                 description=f"{member.mention} currently has no active cooldown.",
                 color=discord.Color.orange()
             ),
@@ -1533,7 +1533,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     if not has_tester_role(interaction.user):
         embed = discord.Embed(
-            title="❌ Tester Role Required", 
+            title="Tester Role Required", 
             description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", 
             color=discord.Color.red()
         )
@@ -1547,7 +1547,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     if not region:
         embed = discord.Embed(
-            title="❌ Invalid Channel", 
+            title="Invalid Channel", 
             description=f"This is not a valid waitlist channel. Channel name: {channel.name}\n\nValid channels are: waitlist-na, waitlist-eu, waitlist-as, waitlist-au", 
             color=discord.Color.red()
         )
@@ -1604,7 +1604,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
     
     await interaction.response.send_message(
             embed=discord.Embed(
-                title="✅ Queue Started",
+                title="Queue Started",
                 description=f"{region.upper()} waitlist is now active in {waitlist_channel.mention if waitlist_channel else f'#waitlist-{region}'}. You are now an active tester.{queue_status}",
                 color=discord.Color.green()
             ),
@@ -1627,7 +1627,7 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
 
     if not has_tester_role(interaction.user):
         embed = discord.Embed(
-            title="❌ Tester Role Required", 
+            title="aTester Role Required", 
             description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", 
             color=discord.Color.red()
         )
@@ -1640,7 +1640,7 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
     
     if not region:
         embed = discord.Embed(
-            title="❌ Invalid Channel", 
+            title="Invalid Channel", 
             description=f"This is not a valid waitlist channel. Channel name: {channel.name}\n\nValid channels are: waitlist-na, waitlist-eu, waitlist-as, waitlist-au", 
             color=discord.Color.red()
         )
@@ -1658,7 +1658,7 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
 
         await interaction.response.send_message(
             embed=discord.Embed(
-                title="👋 Left Active Testers",
+                title="Left Active Testers",
                 description=f"You have been removed from active testers for {region.upper()} in {channel.mention}.",
                 color=discord.Color.blurple()
             ),
