@@ -719,7 +719,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     )
     embed.set_thumbnail(url=f"https://mc-heads.net/head/{ign}/100")
 
-    sent = await results_channel.send(content=user.mention, embed=embed)a
+    sent = await results_channel.send(content=user.mention, embed=embed)
 
     try:
         for e in (["👑", "🥳", "😱", "😭", "😂", "💀"] if is_high_result else ["👑", "🥳", "😱", "😭", "😂", "💀"]):
