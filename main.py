@@ -1348,7 +1348,7 @@ async def on_interaction(interaction: discord.Interaction):
 
                     user_id = interaction.user.id
                     if user_id not in user_info:
-                        embed = discord.Embed(title="❌ Form Required", description="You must submit the form in <#📨┃request-test> before joining the queue.", color=discord.Color.red())
+                        embed = discord.Embed(title="❌ Form Required", description="You must submit the form in <#1407100169467727982> before joining the queue.", color=discord.Color.red())
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
@@ -2005,36 +2005,8 @@ async def passeval(interaction: discord.Interaction):
         embed = discord.Embed(title="Error", description=f"An error occurred while moving/renaming the channel: {str(e)}", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="close", description="Close an eval channel and post results (Tester role required)")
-@app_commands.describe(previous_tier="Previous tier before the test (optional)", earned_tier="Tier earned from the test (optional)")
-@app_commands.choices(
-    previous_tier=[
-        app_commands.Choice(name="N/A", value="N/A"),
-        app_commands.Choice(name="HT1", value="HT1"),
-        app_commands.Choice(name="LT1", value="LT1"),
-        app_commands.Choice(name="HT2", value="HT2"),
-        app_commands.Choice(name="LT2", value="LT2"),
-        app_commands.Choice(name="HT3", value="HT3"),
-        app_commands.Choice(name="LT3", value="LT3"),
-        app_commands.Choice(name="HT4", value="HT4"),
-        app_commands.Choice(name="LT4", value="LT4"),
-        app_commands.Choice(name="HT5", value="HT5"),
-        app_commands.Choice(name="LT5", value="LT5"),
-    ],
-    earned_tier=[
-        app_commands.Choice(name="HT1", value="HT1"),
-        app_commands.Choice(name="LT1", value="LT1"),
-        app_commands.Choice(name="HT2", value="HT2"),
-        app_commands.Choice(name="LT2", value="LT2"),
-        app_commands.Choice(name="HT3", value="HT3"),
-        app_commands.Choice(name="LT3", value="LT3"),
-        app_commands.Choice(name="HT4", value="HT4"),
-        app_commands.Choice(name="LT4", value="LT4"),
-        app_commands.Choice(name="HT5", value="HT5"),
-        app_commands.Choice(name="LT5", value="LT5"),
-    ]
-)
-async def close(interaction: discord.Interaction, previous_tier: str | None = None, earned_tier: str | None = None):
+@bot.tree.command(name="close", description="Close an eval channel (Tester role required)")
+async def close(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
 
