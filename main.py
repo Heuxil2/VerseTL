@@ -717,7 +717,8 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
         f"**Previous Tier:**\n{current_rank}\n"
         f"**Tier Earned:**\n{earned_rank}"
     )
-    embed.set_thumbnail(url=f"https://mc-heads.net/head/{ign}/100")
+    # MODIFICATION 1: Changement de 'head' vers 'body' pour montrer le corps + tête
+    embed.set_thumbnail(url=f"https://mc-heads.net/body/{ign}/100")
 
     sent = await results_channel.send(content=user.mention, embed=embed)
 
@@ -963,8 +964,8 @@ async def on_ready():
 
     load_tester_stats()
     load_user_cooldowns()
-    load_user_info()
-    load_last_region_activity()
+    load_user_info()  # MODIFICATION 2: Le chargement des formulaires est déjà implémenté
+    load_last_region_activity()  # MODIFICATION 2: Le chargement du last test at est déjà implémenté
 
     for g in bot.guilds:
         _ensure_guild_activity_state(g.id)
@@ -1392,15 +1393,10 @@ async def on_interaction(interaction: discord.Interaction):
                         f"✅ Successfully joined the {region.upper()} queue! You are position #{len(waitlists[region])} in line.",
                         ephemeral=True)
 
+                    # MODIFICATION 4: Log uniquement dans #logs, pas de message dans waitlist
                     await log_queue_join(interaction.guild, interaction.user, region, len(waitlists[region]))
 
                     await update_waitlist_message(interaction.guild, region)
-
-                    # Ping testers in the region waitlist channel (uniquement testeurs actifs)
-                    try:
-                        await ping_testers_in_waitlist_channel(interaction.guild, region, interaction.user)
-                    except Exception:
-                        pass
                     return
             embed = discord.Embed(title="❌ Invalid Region", description="Invalid waitlist region.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -2081,7 +2077,27 @@ async def close(interaction: discord.Interaction, previous_tier: str | None = No
     data = user_info.get(player.id, {}) if isinstance(user_info, dict) else {}
     ign = data.get("ign", player.display_name)
 
-    # Si earned_tier est absent -> Vue à 2 sélecteurs
+    # MODIFICATION 5 et 6: Si aucun paramètre n'est fourni, fermer directement sans menu
+    if not previous_tier and not earned_tier:
+        embed = discord.Embed(
+            title="Channel Closing",
+            description="This channel will be closed in 5 seconds…",
+            color=discord.Color.orange()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        try:
+            if player.id in active_testing_sessions:
+                del active_testing_sessions[player.id]
+        except Exception:
+            pass
+        await asyncio.sleep(5)
+        try:
+            await ch.delete(reason=f"Eval closed without results by {interaction.user.name}")
+        except Exception:
+            pass
+        return
+
+    # Si earned_tier est absent mais previous_tier fourni -> Vue à 2 sélecteurs
     if not earned_tier:
         view = TierSelectView(channel=ch, tester=interaction.user, previous_tier=(previous_tier or "N/A"))
         embed = discord.Embed(
@@ -2092,7 +2108,7 @@ async def close(interaction: discord.Interaction, previous_tier: str | None = No
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         return
 
-    # Sinon exécution directe
+    # MODIFICATION 5: Même avec des paramètres, fermer après 5 secondes
     try:
         await post_tier_results(
             interaction=interaction,
@@ -2537,7 +2553,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         print(f"DEBUG: Error in update_waitlist_message for {region} in guild {guild.id}: {e}")
 
 async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str, position: int):
-    """Poste dans #logs et ping uniquement le(s) testeur(s) actif(s) pour la région."""
+    """MODIFICATION 4: Poste dans #logs avec format embed et ping uniquement le(s) testeur(s) actif(s) pour la région."""
     if not is_guild_authorized(getattr(guild, "id", None)):
         return
 
@@ -2551,30 +2567,20 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
             print("DEBUG: Logs channel not found; skipping #logs post")
             return
 
-        if testers_mentions:
-            content = f"{testers_mentions} {user.mention} joined the queue."
-        else:
-            content = f"{user.mention} joined the queue."
+        # Créer l'embed
+        embed = discord.Embed(
+            title="Queue Join",
+            description=f"{user.mention} joined the queue in waitlist-{region}",
+            color=discord.Color.blue()
+        )
 
-        await logs_channel.send(content=content)
+        if testers_mentions:
+            content = testers_mentions
+            await logs_channel.send(content=content, embed=embed)
+        else:
+            await logs_channel.send(embed=embed)
     except Exception as e:
         print(f"DEBUG: Error logging queue join: {e}")
-
-async def ping_testers_in_waitlist_channel(guild: discord.Guild, region: str, user: discord.Member):
-    """Ping uniquement le(s) testeur(s) actifs de la région dans waitlist-<region>."""
-    try:
-        channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
-        if not channel:
-            return
-        _ensure_guild_queue_state(guild.id)
-        testers = active_testers.get(guild.id, {}).get(region, []) or []
-        if not testers:
-            return
-        mentions = " ".join(f"<@{tid}>" for tid in testers)
-        text = f"{mentions} {user.mention} joined the queue."
-        await channel.send(content=text)
-    except Exception as e:
-        print(f"DEBUG: Error pinging testers in waitlist-{region}: {e}")
 
 async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
     """Send a 'Queue Position Updated' DM when a new user becomes #1 for a region (per guild)."""
