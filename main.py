@@ -1348,7 +1348,7 @@ async def on_interaction(interaction: discord.Interaction):
 
                     user_id = interaction.user.id
                     if user_id not in user_info:
-                        embed = discord.Embed(title="❌ Form Required", description="You must submit the form in <#1407100169467727982> before joining the queue.", color=discord.Color.red())
+                        embed = discord.Embed(title="❌ Form Required", description="You must submit the form in <#📨┃request-test> before joining the queue.", color=discord.Color.red())
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
@@ -2567,12 +2567,23 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
             print("DEBUG: Logs channel not found; skipping #logs post")
             return
 
-        # Créer l'embed
+        # Trouver le salon waitlist pour créer le lien cliquable
+        waitlist_channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
+        waitlist_link = waitlist_channel.mention if waitlist_channel else f"#waitlist-{region}"
+
+        # Créer l'embed avec avatar et lien cliquable
         embed = discord.Embed(
             title="Queue Join",
-            description=f"{user.mention} joined the queue in waitlist-{region}",
+            description=f"{user.mention} joined the queue in {waitlist_link}",
             color=discord.Color.blue()
         )
+        
+        # Ajouter l'avatar de l'utilisateur comme thumbnail
+        if user.avatar:
+            embed.set_thumbnail(url=user.avatar.url)
+        else:
+            # Utiliser l'avatar par défaut si l'utilisateur n'en a pas
+            embed.set_thumbnail(url=user.default_avatar.url)
 
         if testers_mentions:
             content = testers_mentions
