@@ -1038,7 +1038,7 @@ async def on_ready():
                     "• Username should be the name of the account you will be testing on\n\n"
                     "**🛑 Failure to provide authentic information will result in a denied test.**\n\n"
                 ),
-                color=discord.Color(16766720)
+                color = discord.Color(13938487)
             )
             view = discord.ui.View(timeout=None)
             view.add_item(
@@ -1428,7 +1428,7 @@ async def on_interaction(interaction: discord.Interaction):
 
                     embed = discord.Embed(
                         title="You have joined the queue!",
-                        description="Remember, once your ticket is open you will be put on cooldown.\nClick the Join button again to leave.",
+                         description="Remember, once your ticket is open you will be put on cooldown.\n**Click the Join button again to leave.**",
                         color=discord.Color(15880807)
                     )
                     
@@ -2396,7 +2396,7 @@ class WaitlistModal(discord.ui.Modal):
 
         embed = discord.Embed(
             description=f"You have been added to the {target_channel_text}.",
-            color=discord.Color.green())
+            discord.Color(15880807))
         embed.set_footer(text="Only you can see this • Dismiss message")
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -2444,8 +2444,8 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
 
     if region in guild_queue and tester_ids:
         color = discord.Color.from_rgb(220, 80, 120)
+        title="Tester(s) Available!",
         description = (
-            f"# **Tester(s) Available!**\n\n"
             f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n"
             f"**Queue**\n{queue_display}\n\n"
             f"**Testers**\n{testers_display}")
