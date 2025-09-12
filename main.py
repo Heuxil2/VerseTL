@@ -611,26 +611,7 @@ def load_user_info():
     except Exception as e:
         print(f"DEBUG: Error loading user_info: {e}")
         user_info = {}
-
-async def add_ign_to_sheet(ign: str, tier: str):
-    """Add IGN to the appropriate tier column in the Google Sheet"""
-    try:
-        service = get_sheets_service()
-        if not service:
-            print("DEBUG: Google Sheets service not available")
-            return False
-
-        column = TIER_COLUMNS.get(tier.upper())
-        if not column:
-            print(f"DEBUG: Unknown tier: {tier}")
-            return False
-
-        range_name = f"'VerseTL Crystal'!{column}:{column}"
-        result = service.spreadsheets().values().get(
-            spreadsheetId=SPREADSHEET_ID,
-            range=range_name
-        ).execute()
-
+            
         values = result.get('values', [])
         next_row = len(values) + 1
 
