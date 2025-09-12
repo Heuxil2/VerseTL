@@ -1348,7 +1348,7 @@ async def on_interaction(interaction: discord.Interaction):
 
                     user_id = interaction.user.id
                     if user_id not in user_info:
-                        embed = discord.Embed(title="❌ Form Required", description="You must submit the form in <#1407100169467727982> before joining the queue.", color=discord.Color.red())
+                        embed = discord.Embed(title="❌ Form Required", description="You must submit the form in <#📨┃request-test> before joining the queue.", color=discord.Color.red())
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
@@ -1370,8 +1370,45 @@ async def on_interaction(interaction: discord.Interaction):
                             del active_testing_sessions[user_id]
 
                     if interaction.user.id in waitlists[region]:
-                        embed = discord.Embed(title="ℹ️ Already in Queue", description="You're already in the queue.", color=discord.Color.red())
-                        await interaction.response.send_message(embed=embed, ephemeral=True)
+                        embed = discord.Embed(
+                            title="You are already in the queue. Do you wish to leave?",
+                            description="Click Dismiss Message to cancel.",
+                            color=discord.Color.orange()
+                        )
+                        
+                        # Créer une vue avec le bouton "Leave Queue"
+                        view = discord.ui.View(timeout=60)
+                        leave_button = discord.ui.Button(label="Leave Queue", style=discord.ButtonStyle.danger)
+                        
+                        async def leave_callback(button_interaction):
+                            # Retirer l'utilisateur de la queue
+                            try:
+                                waitlists[region].remove(interaction.user.id)
+                                
+                                # Retirer les rôles
+                                role = discord.utils.get(interaction.guild.roles, name=f"Waitlist-{region.upper()}")
+                                if role and role < interaction.guild.me.top_role:
+                                    try:
+                                        await interaction.user.remove_roles(role)
+                                    except discord.Forbidden:
+                                        pass
+                                
+                                await update_waitlist_message(interaction.guild, region)
+                                
+                                await button_interaction.response.send_message(
+                                    f"You have left the {region.upper()} queue.", 
+                                    ephemeral=True
+                                )
+                            except ValueError:
+                                await button_interaction.response.send_message(
+                                    "You were not in the queue.", 
+                                    ephemeral=True
+                                )
+                        
+                        leave_button.callback = leave_callback
+                        view.add_item(leave_button)
+                        
+                        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
                         return
 
                     if len(waitlists[region]) >= MAX_WAITLIST:
@@ -1389,9 +1426,13 @@ async def on_interaction(interaction: discord.Interaction):
                         except discord.Forbidden:
                             pass
 
-                    await interaction.response.send_message(
-                        f"✅ Successfully joined the {region.upper()} queue! You are position #{len(waitlists[region])} in line.",
-                        ephemeral=True)
+                    embed = discord.Embed(
+                        title="You have joined the queue!",
+                        description="Remember, once your ticket is open you will be put on cooldown.\nClick the Join button again to leave.",
+                        color=discord.Color.green()
+                    )
+                    
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
 
                     # MODIFICATION 4: Log uniquement dans #logs, pas de message dans waitlist
                     await log_queue_join(interaction.guild, interaction.user, region, len(waitlists[region]))
@@ -1801,7 +1842,25 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
         return
 
     channel = interaction.channel
-    if not isinstance(channel, discord.TextChannel) or not (channel.name.startswith("Eval ") or channel.name.startswith("High-Eval-")):
+    if not isinstance(channel, discord.TextChannel):
+        embed = discord.Embed(
+            title="❌ Wrong Channel",
+            description="This command can only be used in text channels.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+    
+    # Vérifier si c'est un salon d'évaluation (plus flexible)
+    channel_name_lower = channel.name.lower()
+    is_eval_channel = (
+        channel_name_lower.startswith("eval ") or 
+        channel_name_lower.startswith("eval-") or
+        channel_name_lower.startswith("high-eval-") or
+        "eval" in channel_name_lower
+    )
+    
+    if not is_eval_channel:
         embed = discord.Embed(
             title="❌ Wrong Channel",
             description="This command can only be used inside an eval channel.",
@@ -2021,96 +2080,44 @@ async def close(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
     
-    if "eval" not in ch.name.lower():
+    # Vérifier si c'est un salon d'évaluation (plus flexible)
+    channel_name_lower = ch.name.lower()
+    is_eval_channel = (
+        channel_name_lower.startswith("eval ") or 
+        channel_name_lower.startswith("eval-") or
+        channel_name_lower.startswith("high-eval-") or
+        "eval" in channel_name_lower
+    )
+    
+    if not is_eval_channel:
         embed = discord.Embed(title="❌ Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # Find tested player
-    player = None
-    for uid, cid in active_testing_sessions.items():
-        if cid == ch.id:
-            player = ch.guild.get_member(uid)
-            break
-
-    if not player:
-        await interaction.response.send_message(embed=discord.Embed(title="No Active Player", description="Could not determine the tested player for this channel.", color=discord.Color.red()), ephemeral=True)
-        return
-
-    # Determine region from category
-    region = "NA"
-    if ch.category:
-        cname = ch.category.name.lower()
-        for r in ["na","eu","as","au"]:
-            if r in cname:
-                region = r.upper()
-                break
-
-    data = user_info.get(player.id, {}) if isinstance(user_info, dict) else {}
-    ign = data.get("ign", player.display_name)
-
-    # MODIFICATION 5 et 6: Si aucun paramètre n'est fourni, fermer directement sans menu
-    if not previous_tier and not earned_tier:
-        embed = discord.Embed(
-            title="Channel Closing",
-            description="This channel will be closed in 5 seconds…",
-            color=discord.Color.orange()
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        try:
-            if player.id in active_testing_sessions:
-                del active_testing_sessions[player.id]
-        except Exception:
-            pass
-        await asyncio.sleep(5)
-        try:
-            await ch.delete(reason=f"Eval closed without results by {interaction.user.name}")
-        except Exception:
-            pass
-        return
-
-    # Si earned_tier est absent mais previous_tier fourni -> Vue à 2 sélecteurs
-    if not earned_tier:
-        view = TierSelectView(channel=ch, tester=interaction.user, previous_tier=(previous_tier or "N/A"))
-        embed = discord.Embed(
-            title="Close Evaluation",
-            description="Select the previous tier (optional) and the earned tier, or choose 'Only Close'. The channel will be deleted 5 seconds after your choice.",
-            color=discord.Color.blurple()
-        )
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-        return
-
-    # MODIFICATION 5: Même avec des paramètres, fermer après 5 secondes
-    try:
-        await post_tier_results(
-            interaction=interaction,
-            user=player,
-            ign=ign,
-            region=region,
-            gamemode="Crystal",
-            current_rank=(previous_tier or "N/A"),
-            earned_rank=earned_tier,
-            tester=interaction.user
-        )
-    except Exception as e:
-        print(f"DEBUG: /close post_tier_results error: {e}")
-
-    confirm = discord.Embed(
+    # Fermer le salon directement après 5 secondes
+    embed = discord.Embed(
         title="Channel Closing",
-        description=f"Results posted for {earned_tier}. This channel will be deleted in 5 seconds…",
-        color=discord.Color.green()
+        description="This channel will be closed in 5 seconds…",
+        color=discord.Color.orange()
     )
-    await interaction.response.send_message(embed=confirm, ephemeral=True)
-
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    # Nettoyer toutes les sessions actives pour ce salon
     try:
-        if player.id in active_testing_sessions:
-            del active_testing_sessions[player.id]
+        sessions_to_remove = []
+        for uid, cid in active_testing_sessions.items():
+            if cid == ch.id:
+                sessions_to_remove.append(uid)
+        
+        for uid in sessions_to_remove:
+            del active_testing_sessions[uid]
+            print(f"DEBUG: Cleaned up session for user {uid} in channel {ch.id}")
     except Exception:
         pass
-
+    
     await asyncio.sleep(5)
     try:
-        await ch.delete(reason=f"Eval closed with tier {earned_tier} by {interaction.user.name}")
+        await ch.delete(reason=f"Eval closed by {interaction.user.name}")
     except Exception:
         pass
 
@@ -2168,7 +2175,16 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    if not (interaction.channel.name.startswith("Eval ") or interaction.channel.name.startswith("High-Eval-")):
+    # Vérifier si c'est un salon d'évaluation (plus flexible)
+    channel_name_lower = interaction.channel.name.lower()
+    is_eval_channel = (
+        channel_name_lower.startswith("eval ") or 
+        channel_name_lower.startswith("eval-") or
+        channel_name_lower.startswith("high-eval-") or
+        "eval" in channel_name_lower
+    )
+    
+    if not is_eval_channel:
         embed = discord.Embed(title="Wrong Channel", description="This command can only be used in eval channels to prevent duplicate results.", color=discord.Color.red())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
