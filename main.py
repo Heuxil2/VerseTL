@@ -625,7 +625,7 @@ async def add_ign_to_sheet(ign: str, tier: str):
             print(f"DEBUG: Unknown tier: {tier}")
             return False
 
-        range_name = f"'VerseTL Crystal'!{column}:{column}"
+        range_name = f\"'VerseTL Crystal'!{column}:{column}\"
         result = service.spreadsheets().values().get(
             spreadsheetId=SPREADSHEET_ID,
             range=range_name
@@ -634,7 +634,7 @@ async def add_ign_to_sheet(ign: str, tier: str):
         values = result.get('values', [])
         next_row = len(values) + 1
 
-        range_name = f"'VerseTL Crystal'!{column}{next_row}"
+        range_name = f\"'VerseTL Crystal'!{column}{next_row}\"
         body = {'values': [[ign]]}
 
         service.spreadsheets().values().update(
@@ -644,14 +644,14 @@ async def add_ign_to_sheet(ign: str, tier: str):
             body=body
         ).execute()
 
-        print(f"DEBUG: Successfully added {ign} to {tier} column at row {next_row}")
+        print(f\"DEBUG: Successfully added {ign} to {tier} column at row {next_row}\")
         return True
 
     except HttpError as e:
-        print(f"DEBUG: Google Sheets API error: {e}")
+        print(f\"DEBUG: Google Sheets API error: {e}\")
         return False
     except Exception as e:
-        print(f"DEBUG: Error adding IGN to sheet: {e}")
+        print(f\"DEBUG: Error adding IGN to sheet: {e}\")
         return False
 
 async def update_user_count_channel(guild):
@@ -710,14 +710,12 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     embed = discord.Embed(title=f"{ign}'s Test Results", color=embed_color)
     title_prefix = "🔥 **HIGH TIER** 🔥\n" if is_high_result else ""
     embed.description = (
-        f"{title_prefix}"
         f"**Tester:**\n{tester.mention}\n"
         f"**Region:**\n{region}\n"
         f"**Minecraft IGN:**\n{ign}\n"
         f"**Previous Tier:**\n{current_rank}\n"
         f"**Tier Earned:**\n{earned_rank}"
     )
-    # MODIFICATION 1: Changement de 'head' vers 'body' pour montrer le corps + tête
     embed.set_thumbnail(url=f"https://mc-heads.net/body/{ign}/100")
 
     sent = await results_channel.send(content=user.mention, embed=embed)
@@ -964,8 +962,8 @@ async def on_ready():
 
     load_tester_stats()
     load_user_cooldowns()
-    load_user_info()  # MODIFICATION 2: Le chargement des formulaires est déjà implémenté
-    load_last_region_activity()  # MODIFICATION 2: Le chargement du last test at est déjà implémenté
+    load_user_info()  # charge les formulaires
+    load_last_region_activity()  # charge le last test at
 
     for g in bot.guilds:
         _ensure_guild_activity_state(g.id)
@@ -1029,7 +1027,7 @@ async def on_ready():
 
         if request_channel:
             embed = discord.Embed(
-                title="📋 Evaluation Testing Waitlist",
+                title="📝 Evaluation Testing Waitlist",
                 description=(
                     "Upon applying, you will be added to a waitlist channel.\n"
                     "Here you will be pinged when a tester of your region is available.\n"
@@ -1038,7 +1036,7 @@ async def on_ready():
                     "• Username should be the name of the account you will be testing on\n\n"
                     "**🛑 Failure to provide authentic information will result in a denied test.**\n\n"
                 ),
-                color=discord.Color.red()
+                color=discord.Color(16766720)
             )
             view = discord.ui.View(timeout=None)
             view.add_item(
@@ -1191,6 +1189,8 @@ async def on_member_remove(member):
         "type": "member_leave",
         "user": str(member),
         "user_id": member.id,
+        "channel": str(member.guild),
+        "content": "",
         "timestamp": datetime.datetime.now().isoformat()
     }
     if member.guild.id not in message_logs:
@@ -1373,7 +1373,7 @@ async def on_interaction(interaction: discord.Interaction):
                         embed = discord.Embed(
                             title="You are already in the queue. Do you wish to leave?",
                             description="Click Dismiss Message to cancel.",
-                            color=discord.Color.orange()
+                            color=discord.Color(15880807)
                         )
                         
                         # Créer une vue avec le bouton "Leave Queue"
@@ -1385,7 +1385,7 @@ async def on_interaction(interaction: discord.Interaction):
                             try:
                                 waitlists[region].remove(interaction.user.id)
                                 
-                                # Retirer les rôles
+                                # Retirer les rôles Waitlist uniquement (pas Matchmaking)
                                 role = discord.utils.get(interaction.guild.roles, name=f"Waitlist-{region.upper()}")
                                 if role and role < interaction.guild.me.top_role:
                                     try:
@@ -1396,7 +1396,7 @@ async def on_interaction(interaction: discord.Interaction):
                                 await update_waitlist_message(interaction.guild, region)
                                 
                                 await button_interaction.response.send_message(
-                                    f"You have left the {region.upper()} queue.", 
+                                    f"You have left the {region.UPPER()} queue.", 
                                     ephemeral=True
                                 )
                             except ValueError:
@@ -1429,12 +1429,12 @@ async def on_interaction(interaction: discord.Interaction):
                     embed = discord.Embed(
                         title="You have joined the queue!",
                         description="Remember, once your ticket is open you will be put on cooldown.\nClick the Join button again to leave.",
-                        color=discord.Color.green()
+                        color=discord.Color(15880807)
                     )
                     
                     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-                    # MODIFICATION 4: Log uniquement dans #logs, pas de message dans waitlist
+                    # Log uniquement dans #logs, pas de message dans waitlist
                     await log_queue_join(interaction.guild, interaction.user, region, len(waitlists[region]))
 
                     await update_waitlist_message(interaction.guild, region)
@@ -1601,7 +1601,8 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
             if member:
                 roles_to_remove = []
                 for role_name in [
-                    f"Waitlist-{region.upper()}", f"{region.upper()} Waitlist", f"{region.upper()} Matchmaking",
+                    f"Waitlist-{region.upper()}", f"{region.upper()} Waitlist",
+                    # f"{region.upper()} Matchmaking",  # ne pas toucher au matchmaking
                     f"waitlist-{region.upper()}", f"waitlist-{region.lower()}",
                     f"{region.lower()} waitlist", f"{region.lower()} matchmaking"
                 ]:
@@ -1691,7 +1692,12 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
 
         if not active_testers[interaction.guild.id][region]:
             opened_queues[interaction.guild.id].discard(region)
-            print(f"DEBUG: No more active testers for {region} in guild {interaction.guild.id}, removed from opened_queues")
+            # Mettre à jour \"Last Test At\" quand la queue se ferme
+            _ensure_guild_activity_state(interaction.guild.id)
+            last_region_activity[interaction.guild.id][region] = datetime.datetime.now()
+            save_last_region_activity()
+            print(f\"DEBUG: Updated last test at for guild {interaction.guild.id} region {region.upper()} when queue closed\")
+            print(f\"DEBUG: No more active testers for {region} in guild {interaction.guild.id}, removed from opened_queues\")
 
         await interaction.response.send_message(
             embed=discord.Embed(
@@ -1702,6 +1708,11 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
             ephemeral=True
         )
         print(f"DEBUG: Successfully stopped queue for {region}")
+        # rafraîchir l'embed
+        try:
+            await update_waitlist_message(interaction.guild, region)
+        except Exception:
+            pass
     else:
         embed = discord.Embed(
             title="❌ Not Active", 
@@ -1786,10 +1797,11 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
 
         active_testing_sessions[next_user_id] = new_channel.id
 
-        # Nettoie les rôles d'attente
+        # Nettoie les rôles d'attente - NE PAS toucher au Matchmaking
         to_remove = []
         for rn in [
-            f"Waitlist-{region.upper()}", f"{region.upper()} Waitlist", f"{region.upper()} Matchmaking",
+            f"Waitlist-{region.upper()}", f"{region.upper()} Waitlist",
+            # f"{region.upper()} Matchmaking",  # garder
             f"waitlist-{region.upper()}", f"waitlist-{region.lower()}",
             f"{region.lower()} waitlist", f"{region.lower()} matchmaking"
         ]:
@@ -1946,7 +1958,7 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
         possible_role_names = [
             f"Waitlist-{r.upper()}",
             f"{r.upper()} Waitlist",
-            f"{r.upper()} Matchmaking",
+            # f"{r.upper()} Matchmaking",  # ne pas retirer
             f"waitlist-{r.upper()}",
             f"waitlist-{r.lower()}",
             f"{r.lower()} waitlist",
@@ -2426,9 +2438,12 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
             if member and member.status != discord.Status.offline:
                 tester_ids.append(tester_id)
 
+    # Affiche la file filtrée par guilde
+    per_guild_waitlist = [uid for uid in waitlists[region] if guild.get_member(uid)]
     queue_display = "\n".join(
-        [f"{i+1}. <@{uid}>"
-         for i, uid in enumerate(waitlists[region])]) or "*No one in queue*"
+        [f"{i+1}. <@{uid}>" for i, uid in enumerate(per_guild_waitlist)]
+    ) or "*The queue is currently empty! Press below to join.*"
+
     testers_display = "\n".join(
         [f"{i+1}. <@{uid}>"
          for i, uid in enumerate(tester_ids)]) or "*No testers online*"
@@ -2445,8 +2460,8 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     if region in guild_queue and tester_ids:
         color = discord.Color.from_rgb(220, 80, 120)
         description = (
-            f"**Tester(s) Available!**\n\n"
-            f"Use /leave if you wish to be removed from the waitlist or queue.\n"
+            f"# **Tester(s) Available!**\n\n"
+            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n"
             f"**Queue**\n{queue_display}\n\n"
             f"**Testers**\n{testers_display}")
         show_button = True
@@ -2541,7 +2556,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         print(f"DEBUG: Error in update_waitlist_message for {region} in guild {guild.id}: {e}")
 
 async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str, position: int):
-    """MODIFICATION 4: Poste dans #logs avec format embed et ping uniquement le(s) testeur(s) actif(s) pour la région."""
+    """Poste dans #logs avec format embed et ping uniquement le(s) testeur(s) actif(s) pour la région."""
     if not is_guild_authorized(getattr(guild, "id", None)):
         return
 
@@ -2555,22 +2570,18 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
             print("DEBUG: Logs channel not found; skipping #logs post")
             return
 
-        # Trouver le salon waitlist pour créer le lien cliquable
         waitlist_channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
         waitlist_link = waitlist_channel.mention if waitlist_channel else f"#waitlist-{region}"
 
-        # Créer l'embed avec avatar et lien cliquable
         embed = discord.Embed(
             title="Queue Join",
             description=f"{user.mention} joined the queue in {waitlist_link}",
             color=discord.Color.blue()
         )
         
-        # Ajouter l'avatar de l'utilisateur comme thumbnail
         if user.avatar:
             embed.set_thumbnail(url=user.avatar.url)
         else:
-            # Utiliser l'avatar par défaut si l'utilisateur n'en a pas
             embed.set_thumbnail(url=user.default_avatar.url)
 
         if testers_mentions:
@@ -2588,8 +2599,10 @@ async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
 
     _ensure_first_tracker(guild.id)
 
-    top_list = waitlists.get(region, [])
-    current_top_id = top_list[0] if top_list else None
+    # Filtrer la queue globale pour ne garder que les membres de cette guilde
+    top_list_global = waitlists.get(region, [])
+    per_guild_top_list = [uid for uid in top_list_global if guild.get_member(uid)]
+    current_top_id = per_guild_top_list[0] if per_guild_top_list else None
 
     if FIRST_IN_QUEUE_TRACKER[guild.id].get(region) == current_top_id:
         return
