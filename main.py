@@ -944,7 +944,7 @@ async def on_ready():
                     "• Username should be the name of the account you will be testing on\n\n"
                     "**🛑 Failure to provide authentic information will result in a denied test.**\n\n"
                 ),
-                color=discord.Color(16766720)
+                color=discord.Color.red()
             )
             view = discord.ui.View(timeout=None)
             view.add_item(
@@ -1524,9 +1524,9 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
     region = get_region_from_channel(channel.name)
     if not region:
         embed = discord.Embed(
-            title="❌ Invalid Channel",
+            title="Invalid Channel",
             description=f"This is not a valid waitlist channel. Channel name: {channel.name}\n\nValid channels are: waitlist-na, waitlist-eu, waitlist-as, waitlist-au",
-            color=discord.Color.red()
+            color = discord.Color(15880807)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -1543,9 +1543,9 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
 
         await interaction.response.send_message(
             embed=discord.Embed(
-                title="👋 Left Active Testers",
+                title="Left Active Testers",
                 description=f"You have been removed from active testers for {region.upper()} in {channel.mention}.",
-                color=discord.Color.blurple()
+                color = discord.Color(15880807)
             ),
             ephemeral=True
         )
@@ -1555,7 +1555,7 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
             pass
     else:
         embed = discord.Embed(
-            title="❌ Not Active",
+            title="Not Active",
             description=f"You are not an active tester for {region.upper()}.",
             color=discord.Color.red()
         )
@@ -1570,32 +1570,32 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         channel = interaction.channel
 
     if not has_tester_role(interaction.user):
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
+        embed = discord.Embed(title="Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color = discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     region = get_region_from_channel(channel.name)
     if not region:
-        embed = discord.Embed(title="❌ Invalid Channel", description="This is not a valid waitlist channel.", color=discord.Color.red())
+        embed = discord.Embed(title="Invalid Channel", description="This is not a valid waitlist channel.", color = discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     if not waitlists[region]:
-        embed = discord.Embed(title="Empty Queue", description=f"No one is in the {region.upper()} waitlist.", color=discord.Color.red())
+        embed = discord.Embed(title="Empty Queue", description=f"No one is in the {region.upper()} waitlist.", color = discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     next_user_id = waitlists[region].pop(0)
     next_user = interaction.guild.get_member(next_user_id)
     if not next_user:
-        embed = discord.Embed(title="User Not Found", description="Could not find the next user in the waitlist.", color=discord.Color.red())
+        embed = discord.Embed(title="User Not Found", description="Could not find the next user in the waitlist.", color = discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     if next_user_id in active_testing_sessions:
         existing_channel = interaction.guild.get_channel(active_testing_sessions[next_user_id])
         if existing_channel:
-            embed = discord.Embed(title="Active Session Exists", description=f"{next_user.mention} already has an active testing session in {existing_channel.mention}.", color=discord.Color.red())
+            embed = discord.Embed(title="Active Session Exists", description=f"{next_user.mention} already has an active testing session in {existing_channel.mention}.", color = discord.Color(15880807))
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         else:
@@ -1607,7 +1607,7 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
     if not category and target_high:
         category = discord.utils.get(interaction.guild.categories, name=f"Eval {region.upper()}")
     if not category:
-        embed = discord.Embed(title="Category Missing", description=f"Could not find category {primary_category_name}.", color=discord.Color.red())
+        embed = discord.Embed(title="Category Missing", description=f"Could not find category {primary_category_name}.", color = discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -1666,10 +1666,10 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         await send_eval_welcome_message(new_channel, region, next_user, interaction.user)
 
     except discord.Forbidden:
-        embed = discord.Embed(title="Missing Permission", description="I don't have permission to create channels in that category.", color=discord.Color.red())
+        embed = discord.Embed(title="Missing Permission", description="I don't have permission to create channels in that category.", color = discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
     except Exception as e:
-        embed = discord.Embed(title="Error", description=f"An error occurred while creating the channel: {str(e)}", color=discord.Color.red())
+        embed = discord.Embed(title="Error", description=f"An error occurred while creating the channel: {str(e)}", color = discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="add", description="Add a user to the current eval channel (Tester role required)")
@@ -2236,7 +2236,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     if region in guild_queue and tester_ids:
         color = discord.Color.from_rgb(220, 80, 120)
         description = (
-            f"# **Tester(s) Available!**\n\n"
+            f"## Tester(s) Available!\n\n"
             f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n"
             f"**Queue**\n{queue_display}\n\n"
             f"**Testers**\n{testers_display}"
@@ -2341,7 +2341,7 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
         embed = discord.Embed(
             title="Queue Join",
             description=f"{user.mention} joined the queue in {waitlist_link}",
-            color=discord.Color.blue()
+            color = discord.Color(15880807)
         )
 
         if user.avatar:
