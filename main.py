@@ -2382,7 +2382,7 @@ async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
         embed = discord.Embed(
             title="Queue Position Updated",
             description="Your position in the queue has changed.\nYou are now #1 in the queue.",
-            color=discord.Color.blurple()
+            color = discord.Color(15880807)
         )
         embed.set_author(name=get_brand_name(guild), icon_url=get_brand_logo_url(guild))
         await member.send(embed=embed)
