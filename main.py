@@ -2300,16 +2300,16 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     else:
         timestamp = "Never"
 
-    if region in guild_queue and tester_ids:
-        color = discord.Color.from_rgb(220, 80, 120)
-        title="Tester(s) Available!",
-        description = (
-            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n"
-            f"**Queue**\n{queue_display}\n\n"
-            f"**Testers**\n{testers_display}"
-        )
-        show_button = True
-        ping_content = "@here"
+    if region in guild_queue and tester_ids.get(region):  # ou len(tester_ids[region]) > 0
+    color = discord.Color.from_rgb(220, 80, 120)
+    title = "Tester(s) Available!"  # <- pas de virgule
+    description = (
+        "Use `/leave` if you wish to be removed from the waitlist or queue.\n"
+        f"**Queue**\n{queue_display}\n\n"
+        f"**Testers**\n{testers_display}"
+    )
+    show_button = True
+    ping_content = "@here"
     else:
         color = discord.Color(15880807)
         description = (
