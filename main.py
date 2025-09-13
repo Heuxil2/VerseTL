@@ -851,7 +851,7 @@ async def global_app_check(interaction: discord.Interaction) -> bool:
                 title="Unauthorized Server",
                 description=("This server is not authorized to use this bot.\n"
                              "The owner <@836452038548127764> must run /authorize here."),
-                color=discord.Color.red()
+                color=discord.Color(15880807)
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
         except discord.InteractionResponded:
@@ -1041,17 +1041,17 @@ async def on_guild_join(guild):
 async def on_command_error(ctx, error):
     try:
         if isinstance(error, commands.CommandNotFound):
-            embed = discord.Embed(title="Unknown Command", description="Use `/commands` to see available commands.", color=discord.Color.red())
+            embed = discord.Embed(title="Unknown Command", description="Use `/commands` to see available commands.", color=discord.Color(15880807))
             await ctx.send(embed=embed)
         elif isinstance(error, commands.MissingPermissions):
-            embed = discord.Embed(title="Missing Permissions", description="You don't have permission to use this command.", color=discord.Color.red())
+            embed = discord.Embed(title="Missing Permissions", description="You don't have permission to use this command.", color=discord.Color(15880807))
             await ctx.send(embed=embed)
         elif isinstance(error, commands.MissingRequiredArgument):
-            embed = discord.Embed(title="Missing Arguments", description="Missing required arguments. Check `/commands` for proper usage.", color=discord.Color.red())
+            embed = discord.Embed(title="Missing Arguments", description="Missing required arguments. Check `/commands` for proper usage.", color=discord.Color(15880807))
             await ctx.send(embed=embed)
         else:
             print(f"Error: {error}")
-            embed = discord.Embed(title="Error", description=str(error), color=discord.Color.red())
+            embed = discord.Embed(title="Error", description=str(error), color=discord.Color(15880807))
             await ctx.send(embed=embed)
     except Exception:
         pass
@@ -1209,7 +1209,7 @@ async def on_interaction(interaction: discord.Interaction):
                     embed = discord.Embed(
                         title="⛔ Access Denied",
                         description="You are currently restricted from entering the queue.",
-                        color=discord.Color.red()
+                        color=discord.Color(15880807)
                     )
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
@@ -1224,20 +1224,20 @@ async def on_interaction(interaction: discord.Interaction):
                         embed = discord.Embed(
                             title="⛔ Access Denied",
                             description="You are currently restricted from joining the queue.",
-                            color=discord.Color.red()
+                            color=discord.Color(15880807)
                         )
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
                     user_id = interaction.user.id
                     if user_id not in user_info:
-                        embed = discord.Embed(title="Form Required", description="You must submit the form in the request channel before joining the queue.", color=discord.Color.red())
+                        embed = discord.Embed(title="Form Required", description="You must submit the form in the request channel before joining the queue.", color=discord.Color(15880807))
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
                     user_region = user_info[user_id]["region"].lower()
                     if user_region != region:
-                        embed = discord.Embed(title="Wrong Region", description=f"Your form was submitted for {user_region.upper()} region, but you're trying to join the {region.upper()} queue.", color=discord.Color.red())
+                        embed = discord.Embed(title="Wrong Region", description=f"Your form was submitted for {user_region.upper()} region, but you're trying to join the {region.upper()} queue.", color=discord.Color(15880807))
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
@@ -1245,7 +1245,7 @@ async def on_interaction(interaction: discord.Interaction):
                         existing_channel_id = active_testing_sessions[user_id]
                         existing_channel = interaction.guild.get_channel(existing_channel_id)
                         if existing_channel:
-                            embed = discord.Embed(title="⚠️ Active Session Exists", description=f"You already have an active testing session in {existing_channel.mention}. Please complete that test first.", color=discord.Color.red())
+                            embed = discord.Embed(title="⚠️ Active Session Exists", description=f"You already have an active testing session in {existing_channel.mention}. Please complete that test first.", color=discord.Color(15880807))
                             await interaction.response.send_message(embed=embed, ephemeral=True)
                             return
                         else:
@@ -1285,7 +1285,7 @@ async def on_interaction(interaction: discord.Interaction):
                         return
 
                     if len(waitlists[region]) >= MAX_WAITLIST:
-                        embed = discord.Embed(title="⛔ Queue Full", description="Queue is full.", color=discord.Color.red())
+                        embed = discord.Embed(title="⛔ Queue Full", description="Queue is full.", color=discord.Color(15880807))
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
@@ -1308,7 +1308,7 @@ async def on_interaction(interaction: discord.Interaction):
                     await update_waitlist_message(interaction.guild, region)
                     return
 
-            embed = discord.Embed(title="❌ Invalid Region", description="Invalid waitlist region.", color=discord.Color.red())
+            embed = discord.Embed(title="❌ Invalid Region", description="Invalid waitlist region.", color=discord.Color(15880807))
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # === AUTHORIZATION COMMAND ===
@@ -1316,11 +1316,11 @@ async def on_interaction(interaction: discord.Interaction):
 @bot.tree.command(name="authorize", description="Authorize the bot to operate in this server (Owner only)")
 async def authorize(interaction: discord.Interaction):
     if interaction.user.id != OWNER_ID:
-        embed = discord.Embed(title="Not Allowed", description="Only the owner can authorize a server.", color=discord.Color.red())
+        embed = discord.Embed(title="Not Allowed", description="Only the owner can authorize a server.", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
     if interaction.guild is None:
-        embed = discord.Embed(title="Server Only", description="This command must be used in a server.", color=discord.Color.red())
+        embed = discord.Embed(title="Server Only", description="This command must be used in a server.", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
     if interaction.guild.id in authorized_guilds:
@@ -1375,7 +1375,7 @@ async def leave(interaction: discord.Interaction):
         regions_list = ", ".join(region.upper() for region in left_regions)
         await interaction.response.send_message(f"You left the following waitlists: {regions_list}", ephemeral=True)
     else:
-        embed = discord.Embed(title="ℹ️ Not in Queue", description="You are not in any waitlist.", color=discord.Color.red())
+        embed = discord.Embed(title="ℹ️ Not in Queue", description="You are not in any waitlist.", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="cdreset", description="Remove a user's cooldown before testing")
@@ -1387,7 +1387,7 @@ async def removecooldown(interaction: discord.Interaction, member: discord.Membe
         embed = discord.Embed(
             title="Permission Required",
             description="You must be a Tester or have the Manage Roles permission to use this command.",
-            color=discord.Color.red()
+            color=discord.Color(15880807)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -1431,7 +1431,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
         embed = discord.Embed(
             title="❌ Tester Role Required",
             description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester",
-            color=discord.Color.red()
+            color=discord.Color(15880807)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -1441,7 +1441,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
         embed = discord.Embed(
             title="❌ Invalid Channel",
             description=f"This is not a valid waitlist channel. Channel name: {channel.name}\n\nValid channels are: waitlist-na, waitlist-eu, waitlist-as, waitlist-au",
-            color=discord.Color.red()
+            color=discord.Color(15880807)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -1516,7 +1516,7 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
         embed = discord.Embed(
             title="❌ Tester Role Required",
             description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester",
-            color=discord.Color.red()
+            color=discord.Color(15880807)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -1557,7 +1557,7 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
         embed = discord.Embed(
             title="Not Active",
             description=f"You are not an active tester for {region.upper()}.",
-            color=discord.Color.red()
+            color=discord.Color(15880807)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -1681,7 +1681,7 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
         embed = discord.Embed(
             title="❌ Tester Role Required",
             description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester",
-            color=discord.Color.red()
+            color=discord.Color(15880807)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -1691,7 +1691,7 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
         embed = discord.Embed(
             title="❌ Wrong Channel",
             description="This command can only be used in text channels.",
-            color=discord.Color.red()
+            color=discord.Color(15880807)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -1707,7 +1707,7 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
         embed = discord.Embed(
             title="❌ Wrong Channel",
             description="This command can only be used inside an eval channel.",
-            color=discord.Color.red()
+            color=discord.Color(15880807)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -1723,7 +1723,7 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
                 embed=discord.Embed(
                     title="ℹ️ Already Added",
                     description=f"{member.mention} already has an active session in this channel. Ensured access permissions.",
-                    color=discord.Color.orange()
+                    color=discord.Color(15880807)
                 ),
                 ephemeral=True
             )
@@ -1735,7 +1735,7 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
                 embed=discord.Embed(
                     title="❌ Active Session Exists",
                     description=f"{member.mention} already has an active testing session in {place}.",
-                    color=discord.Color.red()
+                    color=discord.Color(15880807)
                 ),
                 ephemeral=True
             )
@@ -1748,7 +1748,7 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
             embed=discord.Embed(
                 title="Missing Permission",
                 description="I don't have permission to manage channel permissions here.",
-                color=discord.Color.red()
+                color=discord.Color(15880807)
             ),
             ephemeral=True
         )
@@ -1758,7 +1758,7 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
             embed=discord.Embed(
                 title="Error",
                 description=f"An error occurred while setting permissions: {e}",
-                color=discord.Color.red()
+                color=discord.Color(15880807)
             ),
             ephemeral=True
         )
@@ -1817,92 +1817,159 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
     except Exception:
         pass
 
-    parts = [
-        f"✅ {member.mention} has been added to this eval channel.",
-        f"⏰ Applied a {cooldown_days}-day cooldown.",
-    ]
-    if removed_regions:
-        parts.append(f"🧹 Removed from waitlist(s): {', '.join(r.upper() for r in removed_regions)}")
-    if roles_to_remove:
-        parts.append(f"🗑️ Removed waitlist role(s): {', '.join(r.name for r in roles_to_remove)}")
+    # Remove the confirmation message - just acknowledge the interaction silently
+    await interaction.response.defer(ephemeral=True)
 
-    await interaction.response.send_message(
-        embed=discord.Embed(
-            title="User Added",
-            description="\n".join(parts),
-            color=discord.Color.green()
-        ),
-        ephemeral=True
+@bot.tree.command(name="remove", description="Remove a user from the current eval channel (Tester role required)")
+@app_commands.describe(member="Member to remove from this eval channel")
+async def remove_from_eval(interaction: discord.Interaction, member: discord.Member):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+    if not has_tester_role(interaction.user):
+        embed = discord.Embed(
+            title="❌ Tester Role Required",
+            description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester",
+            color=discord.Color(15880807)
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    channel = interaction.channel
+    if not isinstance(channel, discord.TextChannel):
+        embed = discord.Embed(
+            title="❌ Wrong Channel",
+            description="This command can only be used in text channels.",
+            color=discord.Color(15880807)
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    channel_name_lower = channel.name.lower()
+    is_eval_channel = (
+        channel_name_lower.startswith("eval ") or 
+        channel_name_lower.startswith("eval-") or
+        channel_name_lower.startswith("high-eval-") or
+        "eval" in channel_name_lower
     )
+    if not is_eval_channel:
+        embed = discord.Embed(
+            title="❌ Wrong Channel",
+            description="This command can only be used inside an eval channel.",
+            color=discord.Color(15880807)
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
 
-@bot.tree.command(name="passeval", description="Transfer eval channel to High Eval category (Tester role required)")
+    # Check if member has access to this channel
+    if not channel.permissions_for(member).read_messages:
+        embed = discord.Embed(
+            title="❌ User Not Found",
+            description=f"{member.mention} does not have access to this eval channel.",
+            color=discord.Color(15880807)
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    try:
+        # Remove channel permissions
+        await channel.set_permissions(member, read_messages=False, send_messages=False)
+        
+        # Remove from active testing sessions
+        if member.id in active_testing_sessions and active_testing_sessions[member.id] == channel.id:
+            del active_testing_sessions[member.id]
+        
+        embed = discord.Embed(
+            title="✅ User Removed",
+            description=f"{member.mention} has been removed from this eval channel.",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+    except discord.Forbidden:
+        embed = discord.Embed(
+            title="❌ Missing Permission",
+            description="I don't have permission to manage channel permissions here.",
+            color=discord.Color(15880807)
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except Exception as e:
+        embed = discord.Embed(
+            title="❌ Error",
+            description=f"An error occurred while removing permissions: {e}",
+            color=discord.Color(15880807)
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="passeval", description="Post LT3 results and give LT3 role to player (Tester role required)")
 async def passeval(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
     if not has_tester_role(interaction.user):
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
+        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     ch = interaction.channel
     if not isinstance(ch, discord.TextChannel):
-        embed = discord.Embed(title="Wrong Channel", description="This command can only be used in text channels.", color=discord.Color.red())
+        embed = discord.Embed(title="❌ Wrong Channel", description="This command can only be used in text channels.", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
     if "eval" not in ch.name.lower():
-        embed = discord.Embed(title="Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color.red())
+        embed = discord.Embed(title="❌ Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    current_category = ch.category
-    if not current_category:
-        embed = discord.Embed(title="No Category", description="Channel must be in a category to determine region.", color=discord.Color.red())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
-
-    region = None
-    cname = current_category.name.lower()
-    for r in ["na","eu","as","au"]:
-        if r in cname:
-            region = r
+    # Find the player in this eval channel
+    player = None
+    for uid, cid in active_testing_sessions.items():
+        if cid == ch.id:
+            player = interaction.guild.get_member(uid)
             break
-    if not region:
-        embed = discord.Embed(title="Unknown Region", description="Could not determine region from current category.", color=discord.Color.red())
+    
+    if not player:
+        embed = discord.Embed(title="❌ No Player Found", description="Could not find a player in this eval channel.", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    high_eval_category_name = f"High Eval {region.upper()}"
-    high_eval_category = discord.utils.get(interaction.guild.categories, name=high_eval_category_name)
-    if not high_eval_category:
-        embed = discord.Embed(title="Category Missing", description=f"Could not find {high_eval_category_name} category.", color=discord.Color.red())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
+    # Determine region from channel category
+    region = "NA"
+    if ch.category:
+        cname = ch.category.name.lower()
+        for r in ["na", "eu", "as", "au"]:
+            if r in cname:
+                region = r.upper()
+                break
 
-    old = ch.name
-    if old.lower().startswith("high-eval-"):
-        new_name = old
-    elif old.lower().startswith("eval "):
-        new_name = f"High-Eval-{old[5:]}"
-    elif old.lower().startswith("eval-"):
-        new_name = f"High-{old}"
-    else:
-        new_name = f"High-Eval-{old}"
-
+    # Get player info
+    data = user_info.get(player.id, {}) if isinstance(user_info, dict) else {}
+    ign = data.get("ign", player.display_name)
+    
     try:
-        await ch.edit(category=high_eval_category, name=new_name)
-        await interaction.response.send_message(f"✅ This channel has been transferred to {high_eval_category_name} and renamed to `{new_name}`.", ephemeral=True)
-
-        embed = discord.Embed(
-            title="High Evaluation",
-            description=f"This evaluation has been transferred to **{high_eval_category_name}** by {interaction.user.mention}.",
-            color=0xff6600
+        # Post LT3 tier results
+        await post_tier_results(
+            interaction=interaction,
+            user=player,
+            ign=ign,
+            region=region,
+            gamemode="Crystal",
+            current_rank="N/A",
+            earned_rank="LT3",
+            tester=interaction.user
         )
-        await interaction.followup.send(embed=embed)
-    except discord.Forbidden:
-        embed = discord.Embed(title="Missing Permission", description="I don't have permission to move/rename this channel.", color=discord.Color.red())
+        
+        embed = discord.Embed(
+            title="✅ LT3 Results Posted",
+            description=f"Results posted for {player.mention} - LT3 tier earned!\nRole has been automatically assigned.",
+            color=discord.Color.green()
+        )
         await interaction.response.send_message(embed=embed, ephemeral=True)
+        
     except Exception as e:
-        embed = discord.Embed(title="Error", description=f"An error occurred while moving/renaming the channel: {str(e)}", color=discord.Color.red())
+        embed = discord.Embed(
+            title="❌ Error", 
+            description=f"An error occurred while posting results: {str(e)}", 
+            color=discord.Color(15880807)
+        )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="close", description="Close an eval channel (Tester role required)")
@@ -1910,13 +1977,13 @@ async def close(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
     if not has_tester_role(interaction.user):
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
+        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     ch = interaction.channel
     if not isinstance(ch, discord.TextChannel):
-        embed = discord.Embed(title="❌ Wrong Channel", description="This command can only be used in text channels.", color=discord.Color.red())
+        embed = discord.Embed(title="❌ Wrong Channel", description="This command can only be used in text channels.", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -1928,7 +1995,7 @@ async def close(interaction: discord.Interaction):
         "eval" in channel_name_lower
     )
     if not is_eval_channel:
-        embed = discord.Embed(title="❌ Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color.red())
+        embed = discord.Embed(title="❌ Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -1972,7 +2039,7 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
     if not has_tester_role(interaction.user):
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color.red())
+        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -1984,7 +2051,7 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
         "eval" in channel_name_lower
     )
     if not is_eval_channel:
-        embed = discord.Embed(title="Wrong Channel", description="This command can only be used in eval channels to prevent duplicate results.", color=discord.Color.red())
+        embed = discord.Embed(title="Wrong Channel", description="This command can only be used in eval channels to prevent duplicate results.", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -2021,7 +2088,7 @@ async def purge(interaction: discord.Interaction, limit: int):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
     if limit <= 0:
-        embed = discord.Embed(title="Invalid Number", description="Please enter a number greater than 0.", color=discord.Color.red())
+        embed = discord.Embed(title="Invalid Number", description="Please enter a number greater than 0.", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed)
         return
     await interaction.response.defer()
@@ -2093,7 +2160,7 @@ class WaitlistModal(discord.ui.Modal):
             embed = discord.Embed(
                 title="⛔ Unauthorized Server",
                 description="This server is not authorized to use this bot. Ask <@836452038548127764> to run /authorize.",
-                color=discord.Color.red()
+                color=discord.Color(15880807)
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
@@ -2102,7 +2169,7 @@ class WaitlistModal(discord.ui.Modal):
             embed = discord.Embed(
                 title="⛔ Access Denied",
                 description="You are currently restricted from entering the queue.",
-                color=discord.Color.red()
+                color=discord.Color(15880807)
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
@@ -2136,7 +2203,7 @@ class WaitlistModal(discord.ui.Modal):
             existing_channel = interaction.guild.get_channel(existing_channel_id)
 
             if existing_channel:
-                embed = discord.Embed(title="⚠️ Active Session Exists", description=f"You already have an active testing session in {existing_channel.mention}. Please complete that test first.", color=discord.Color.red())
+                embed = discord.Embed(title="⚠️ Active Session Exists", description=f"You already have an active testing session in {existing_channel.mention}. Please complete that test first.", color=discord.Color(15880807))
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
             else:
@@ -2145,7 +2212,7 @@ class WaitlistModal(discord.ui.Modal):
         region_input = self.region.value.lower().strip()
         valid_regions = ["na", "eu", "as", "au"]
         if region_input not in valid_regions:
-            embed = discord.Embed(title="❌ Invalid Region", description="Invalid region. Please use NA, EU, AS, or AU.", color=discord.Color.red())
+            embed = discord.Embed(title="❌ Invalid Region", description="Invalid region. Please use NA, EU, AS, or AU.", color=discord.Color(15880807))
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
