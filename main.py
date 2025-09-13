@@ -1353,7 +1353,7 @@ async def on_interaction(interaction: discord.Interaction):
                     if interaction.user.id in waitlists[region]:
                         embed = discord.Embed(
                             title="You are already in the queue. Do you wish to leave?",
-                            description="Click Dismiss Message to cancel.",
+                            description="-# Click Dismiss Message to cancel.",
                             color=discord.Color(15880807)
                         )
                         
@@ -1409,7 +1409,7 @@ async def on_interaction(interaction: discord.Interaction):
 
                     embed = discord.Embed(
                         title="You have joined the queue!",
-                         description="Remember, once your ticket is open you will be put on cooldown.\n**Click the Join button again to leave.**",
+                         description="Remember, once your ticket is open you will be put on cooldown.\n-# Click the Join button again to leave.",
                         color=discord.Color(15880807)
                     )
                     
@@ -2378,8 +2378,8 @@ class WaitlistModal(discord.ui.Modal):
         embed = discord.Embed(
             description=f"You have been added to the {target_channel_text}.",
             color=discord.Color(15880807)
-        embed.set_footer(text="Only you can see this • Dismiss message")
         )
+        embed.set_footer(text="Only you can see this • Dismiss message")
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
