@@ -689,7 +689,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     # Embed
     embed_color = 0xff0000 if is_high_result else 0xff0000
     embed = discord.Embed(title=f"{ign}'s Test Results", color=embed_color)
-    title_prefix = "🔥 **HIGH TIER** 🔥\n" if is_high_result else ""
+    title_prefix = "" if is_high_result else ""
     embed.description = (
         f"{title_prefix}"
         f"**Tester:**\n{tester.mention}\n"
@@ -1208,13 +1208,13 @@ async def on_message(message):
                 await message.delete()
 
                 link_type = "Discord server invite" if contains_discord_link else "YouTube video"
-                warning_message = f"⚠️ Your message in **{message.guild.name}** was deleted because it contained a {link_type} link. Please avoid sharing such links in the general chat."
+                warning_message = f"Your message in **{message.guild.name}** was deleted because it contained a {link_type} link. Please avoid sharing such links in the general chat."
 
                 try:
                     await message.author.send(warning_message)
                 except discord.Forbidden:
                     warn_embed = discord.Embed(
-                        title="⚠️ Link Removed",
+                        title="Link Removed",
                         description=f"{message.author.mention}, please avoid sharing {link_type} links in this channel.",
                         color=discord.Color.orange()
                     )
@@ -1344,7 +1344,7 @@ async def on_interaction(interaction: discord.Interaction):
                         existing_channel = interaction.guild.get_channel(existing_channel_id)
 
                         if existing_channel:
-                            embed = discord.Embed(title="⚠️ Active Session Exists", description=f"You already have an active testing session in {existing_channel.mention}. Please complete that test first.", color=discord.Color.red())
+                            embed = discord.Embed(title="⚠Active Session Exists", description=f"You already have an active testing session in {existing_channel.mention}. Please complete that test first.", color=discord.Color.red())
                             await interaction.response.send_message(embed=embed, ephemeral=True)
                             return
                         else:
@@ -1352,8 +1352,7 @@ async def on_interaction(interaction: discord.Interaction):
 
                     if interaction.user.id in waitlists[region]:
                         embed = discord.Embed(
-                            title="You are already in the queue. Do you wish to leave?",
-                            description="-# Click Dismiss Message to cancel.",
+                            description="You are already in the queue. Do you wish to leave?\n-# Click Dismiss Message to cancel.",
                             color=discord.Color(15880807)
                         )
                         
@@ -1408,8 +1407,7 @@ async def on_interaction(interaction: discord.Interaction):
                             pass
 
                     embed = discord.Embed(
-                        title="You have joined the queue!",
-                         description="Remember, once your ticket is open you will be put on cooldown.\n-# Click the Join button again to leave.",
+                         description="You have joined the queue!\nRemember, once your ticket is open you will be put on cooldown.\n-# Click the Join button again to leave.",
                         color=discord.Color(15880807)
                     )
                     
