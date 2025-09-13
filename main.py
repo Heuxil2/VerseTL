@@ -719,7 +719,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
             _ensure_guild_activity_state(guild.id)
             last_region_activity[guild.id][reg] = datetime.datetime.now()
             save_last_region_activity()
-            print(f"DEBUG: Updated last test at for guild {guild.id} region {reg.upper()}")
+            print(f"DEBUG: Updated and saved last test at for guild {guild.id} region {reg.upper()}")
     except Exception as e:
         print(f"DEBUG: Failed updating last test at: {e}")
 
@@ -876,9 +876,14 @@ async def on_ready():
     load_user_info()
     load_last_region_activity()
 
+    # Ensure all guilds have proper activity state after loading
     for g in bot.guilds:
-        _ensure_guild_activity_state(g.id)
-        _ensure_first_tracker(g.id)
+        if is_guild_authorized(g.id):
+            _ensure_guild_activity_state(g.id)
+            _ensure_first_tracker(g.id)
+    
+    # Save initial state to ensure persistence
+    save_last_region_activity()
 
     global opened_queues, active_testers, waitlists, waitlist_message_ids, waitlist_messages, active_testing_sessions
     opened_queues.clear()
@@ -971,6 +976,7 @@ async def on_ready():
                     print(f"DEBUG: Could not purge waitlist-{region}: {e}")
 
                 _ensure_guild_queue_state(guild.id)
+                _ensure_guild_activity_state(guild.id)
                 opened_queues[guild.id].discard(region)
                 await create_initial_waitlist_message(guild, region)
 
@@ -2300,18 +2306,19 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     else:
         timestamp = "Never"
 
-    if region in guild_queue and tester_ids.get(region):
-    color = discord.Color.from_rgb(220, 80, 120)
-    title = "Tester(s) Available!"
-    description = (
-        "Use `/leave` if you wish to be removed from the waitlist or queue.\n"
-        f"**Queue**\n{queue_display}\n\n"
-        f"**Testers**\n{testers_display}"
-    )
-    show_button = True
-    ping_content = "@here"
+    # FIXED: Use tester_ids (list) instead of tester_ids.get(region)
+       if region in guild_queue and tester_ids:
+        color = discord.Color.from_rgb(220, 80, 120)
+        title="Tester(s) Available!",
+        description = (
+            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n"
+            f"**Queue**\n{queue_display}\n\n"
+            f"**Testers**\n{testers_display}")
+        show_button = True
+        ping_content = "@here"
     else:
         color = discord.Color(15880807)
+        title = "No Testers Online"
         description = (
             f"No testers for your region are available at this time.\n"
             f"You will be pinged when a tester is available.\n"
@@ -2322,10 +2329,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         ping_content = None
 
     embed = discord.Embed(title=title, description=description, color=color)
-
-    if not (region in guild_queue and tester_ids):
-        embed.set_author(name=get_brand_name(guild), icon_url=get_brand_logo_url(guild))
-        embed.title = "No Testers Online"
+    embed.set_author(name=get_brand_name(guild), icon_url=get_brand_logo_url(guild))
 
     view = discord.ui.View()
     if show_button:
@@ -2586,7 +2590,7 @@ async def cleanup_expired_cooldowns():
         save_user_cooldowns()
         print(f"DEBUG: Cleaned up {len(expired_users)} expired cooldowns")
 
-@tasks.loop(minutes=30)
+@tasks.loop(minutes=5)  # Reduced to 5 minutes for better persistence
 async def periodic_save_activities():
     save_last_region_activity()
     print("DEBUG: Periodic save of last region activities completed")
