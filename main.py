@@ -2379,7 +2379,7 @@ class WaitlistModal(discord.ui.Modal):
             description=f"You have been added to the {target_channel_text}.",
             discord.Color(15880807)
         embed.set_footer(text="Only you can see this • Dismiss message")
-
+        )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 async def update_waitlist_message(guild: discord.Guild, region: str):
