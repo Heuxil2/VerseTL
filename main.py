@@ -667,7 +667,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     # Add user's profile image as author icon to display it as a circle
     user_avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
     embed = discord.Embed(color=embed_color)
-    embed.set_author(name=f"{ign}'s Test Results 🏆", icon_url=user_avatar_url)
+    embed.set_author(name=f"## {ign}'s Test Results 🏆", icon_url=user_avatar_url)
     embed.description = (
         f"**Tester:**\n{tester.mention}\n"
         f"**Region:**\n{region}\n"
@@ -775,7 +775,7 @@ class TierSelectView(discord.ui.View):
             embed = discord.Embed(
                 title="Channel Closing",
                 description="This channel will be closed in 5 seconds…",
-                color=discord.Color.orange()
+                color=discord.Color(15880807)
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             try:
