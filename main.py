@@ -663,8 +663,11 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     if not results_channel:
         return
 
-    embed_color = 0xff0000
-    embed = discord.Embed(title=f"{ign}'s Test Results", color=embed_color)
+    embed_color=discord.Color(15880807)
+    # Add user's profile image as author icon to display it as a circle
+    user_avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
+    embed = discord.Embed(color=embed_color)
+    embed.set_author(name=f"{ign}'s Test Results 🏆", icon_url=user_avatar_url)
     embed.description = (
         f"**Tester:**\n{tester.mention}\n"
         f"**Region:**\n{region}\n"
@@ -719,7 +722,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
             _ensure_guild_activity_state(guild.id)
             last_region_activity[guild.id][reg] = datetime.datetime.now()
             save_last_region_activity()
-            print(f"DEBUG: Updated and saved last test at for guild {guild.id} region {reg.upper()}")
+            print(f"DEBUG: Updated last test at for guild {guild.id} region {reg.upper()}")
     except Exception as e:
         print(f"DEBUG: Failed updating last test at: {e}")
 
@@ -876,14 +879,9 @@ async def on_ready():
     load_user_info()
     load_last_region_activity()
 
-    # Ensure all guilds have proper activity state after loading
     for g in bot.guilds:
-        if is_guild_authorized(g.id):
-            _ensure_guild_activity_state(g.id)
-            _ensure_first_tracker(g.id)
-    
-    # Save initial state to ensure persistence
-    save_last_region_activity()
+        _ensure_guild_activity_state(g.id)
+        _ensure_first_tracker(g.id)
 
     global opened_queues, active_testers, waitlists, waitlist_message_ids, waitlist_messages, active_testing_sessions
     opened_queues.clear()
@@ -976,7 +974,6 @@ async def on_ready():
                     print(f"DEBUG: Could not purge waitlist-{region}: {e}")
 
                 _ensure_guild_queue_state(guild.id)
-                _ensure_guild_activity_state(guild.id)
                 opened_queues[guild.id].discard(region)
                 await create_initial_waitlist_message(guild, region)
 
@@ -1906,22 +1903,22 @@ async def remove_from_eval(interaction: discord.Interaction, member: discord.Mem
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="passeval", description="Post LT3 results and give LT3 role to player (Tester role required)")
+@bot.tree.command(name="passeval", description="Passes a player's eval (Tester role required)")
 async def passeval(interaction: discord.Interaction):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
     if not has_tester_role(interaction.user):
-        embed = discord.Embed(title="❌ Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color(15880807))
+        embed = discord.Embed(title="Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     ch = interaction.channel
     if not isinstance(ch, discord.TextChannel):
-        embed = discord.Embed(title="❌ Wrong Channel", description="This command can only be used in text channels.", color=discord.Color(15880807))
+        embed = discord.Embed(title="Wrong Channel", description="This command can only be used in text channels.", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
     if "eval" not in ch.name.lower():
-        embed = discord.Embed(title="❌ Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color(15880807))
+        embed = discord.Embed(title="Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -1933,9 +1930,18 @@ async def passeval(interaction: discord.Interaction):
             break
     
     if not player:
-        embed = discord.Embed(title="❌ No Player Found", description="Could not find a player in this eval channel.", color=discord.Color(15880807))
+        embed = discord.Embed(title="No Player Found", description="Could not find a player in this eval channel.", color=discord.Color(15880807))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
+
+    # Rename channel to high-eval-(username) format
+    try:
+        username = _slug_username(player.display_name)
+        new_channel_name = f"high-eval-{username}"
+        await ch.edit(name=new_channel_name, reason=f"Player {player.display_name} passed eval")
+    except Exception as e:
+        print(f"DEBUG: Failed to rename channel: {e}")
+        # Continue even if renaming fails
 
     # Determine region from channel category
     region = "NA"
@@ -1964,15 +1970,15 @@ async def passeval(interaction: discord.Interaction):
         )
         
         embed = discord.Embed(
-            title="✅ LT3 Results Posted",
-            description=f"Results posted for {player.mention} - LT3 tier earned!\nRole has been automatically assigned.",
-            color=discord.Color.green()
+            title="LT3 Results Posted",
+            description=f"Results posted for {player.mention} - LT3 tier earned!\nChannel renamed and role has been automatically assigned.",
+            color=discord.Color(15880807)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         
     except Exception as e:
         embed = discord.Embed(
-            title="❌ Error", 
+            title="Error", 
             description=f"An error occurred while posting results: {str(e)}", 
             color=discord.Color(15880807)
         )
@@ -2306,19 +2312,18 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     else:
         timestamp = "Never"
 
-    # FIXED: Use tester_ids (list) instead of tester_ids.get(region)
-       if region in guild_queue and tester_ids:
+    if region in guild_queue and tester_ids:
         color = discord.Color.from_rgb(220, 80, 120)
-        title="Tester(s) Available!",
         description = (
+            f"## Tester(s) Available!\n\n"
             f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n"
             f"**Queue**\n{queue_display}\n\n"
-            f"**Testers**\n{testers_display}")
+            f"**Testers**\n{testers_display}"
+        )
         show_button = True
         ping_content = "@here"
     else:
         color = discord.Color(15880807)
-        title = "No Testers Online"
         description = (
             f"No testers for your region are available at this time.\n"
             f"You will be pinged when a tester is available.\n"
@@ -2328,8 +2333,11 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         show_button = False
         ping_content = None
 
-    embed = discord.Embed(title=title, description=description, color=color)
-    embed.set_author(name=get_brand_name(guild), icon_url=get_brand_logo_url(guild))
+    embed = discord.Embed(description=description, color=color)
+
+    if not (region in guild_queue and tester_ids):
+        embed.set_author(name=get_brand_name(guild), icon_url=get_brand_logo_url(guild))
+        embed.title = "No Testers Online"
 
     view = discord.ui.View()
     if show_button:
@@ -2590,7 +2598,7 @@ async def cleanup_expired_cooldowns():
         save_user_cooldowns()
         print(f"DEBUG: Cleaned up {len(expired_users)} expired cooldowns")
 
-@tasks.loop(minutes=5)  # Reduced to 5 minutes for better persistence
+@tasks.loop(minutes=30)
 async def periodic_save_activities():
     save_last_region_activity()
     print("DEBUG: Periodic save of last region activities completed")
