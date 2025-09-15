@@ -689,13 +689,16 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     if not results_channel:
         return
 
-    # Embed - Fixed bug ligne 717 en ajoutant user_avatar_url
-    embed_color = discord.Color(15880807)
-    # Add user's profile image as author icon to display it as a circle
-    user_avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
-    embed = discord.Embed(color=embed_color)
-    embed.set_author(name=f"**{ign}'s Test Results 🏆**", icon_url=user_avatar_url)
+    # Embed
+    embed_color = 0xF25267 if is_high_result else 0xF25267
+    embed = discord.Embed(
+        title=f"**{ign}'s Test Results 🏆**",
+        color=embed_color
+    )
+
+    title_prefix = "" if is_high_result else ""
     embed.description = (
+        f"{title_prefix}"
         f"**Tester:**\n{tester.mention}\n"
         f"**Region:**\n{region}\n"
         f"**Minecraft IGN:**\n{ign}\n"
@@ -703,8 +706,12 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
         f"**Tier Earned:**\n{earned_rank}"
     )
 
-    # Thumbnail (tête Minecraft) - Utilise body pour skin complet
-    embed.set_thumbnail(url=f"https://mc-heads.net/body/{ign}/100")
+    # Icône de l'utilisateur → set_author ou set_thumbnail
+    user_avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
+    embed.set_author(name=ign, icon_url=user_avatar_url)
+
+    # Thumbnail (tête Minecraft)
+    embed.set_thumbnail(url=f"https://vzge.me/bust/{ign}.png")
 
     sent = await results_channel.send(content=user.mention, embed=embed)
 
@@ -923,9 +930,12 @@ async def on_ready():
     active_testing_sessions.clear()
     print("DEBUG: Cleared queue/tester/waitlist state on startup")
 
-    # MODIFICATION: Ne pas réinitialiser les "last test at" au restart - les préserver depuis le fichier
-    # Les timestamps sont déjà chargés par load_last_region_activity() ci-dessus
-    print("DEBUG: Preserved 'last test at' timestamps from file on startup")
+    # Reset "last test at" to None for all guilds/regions on restart
+    for guild_id in last_region_activity:
+        for region in ["na", "eu", "as", "au"]:
+            last_region_activity[guild_id][region] = None
+    save_last_region_activity()
+    print("DEBUG: Reset all 'last test at' timestamps to None on startup")
 
     global APP_CHECK_ADDED
     if not APP_CHECK_ADDED:
@@ -1456,6 +1466,47 @@ async def removecooldown(interaction: discord.Interaction, member: discord.Membe
             ephemeral=True
         )
 
+@bot.tree.command(name="remove", description="Remove a user's cooldown")
+@app_commands.describe(member="Member to clear cooldown for")
+async def remove(interaction: discord.Interaction, member: discord.Member):
+    if not is_guild_authorized(getattr(interaction.guild, "id", None)):
+        return
+    if not (has_tester_role(interaction.user) or interaction.user.guild_permissions.manage_roles or interaction.user.guild_permissions.administrator):
+        embed = discord.Embed(
+            title="Permission Required",
+            description="You must be a Tester or have the Manage Roles permission to use this command.",
+            color=discord.Color(15880807)
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    had_cooldown = member.id in user_test_cooldowns
+    if had_cooldown:
+        try:
+            del user_test_cooldowns[member.id]
+            save_user_cooldowns()
+        except Exception:
+            pass
+
+    if had_cooldown:
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="Cooldown Removed",
+                description=f"The testing cooldown for {member.mention} has been cleared.",
+                color=discord.Color(15880807)
+            ),
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="No Active Cooldown",
+                description=f"{member.mention} currently has no active cooldown.",
+                color=discord.Color(15880807)
+            ),
+            ephemeral=True
+        )
+
 @bot.tree.command(name="startqueue", description="Start the queue for testing (Tester role required)")
 @app_commands.describe(channel="The waitlist channel to start the queue for")
 async def startqueue(interaction: discord.Interaction, channel: discord.TextChannel = None):
@@ -1859,7 +1910,7 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
     # Remove the confirmation message - just acknowledge the interaction silently
     await interaction.response.defer(ephemeral=True)
 
-@bot.tree.command(name="remove", description="Remove a user from the current eval channel (Tester role required)")
+@bot.tree.command(name="removeuser", description="Remove a user from the current eval channel (Tester role required)")
 @app_commands.describe(member="Member to remove from this eval channel")
 async def remove_from_eval(interaction: discord.Interaction, member: discord.Member):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
@@ -1917,15 +1968,9 @@ async def remove_from_eval(interaction: discord.Interaction, member: discord.Mem
         if member.id in active_testing_sessions and active_testing_sessions[member.id] == channel.id:
             del active_testing_sessions[member.id]
         
-        # MODIFICATION: Supprimer le cooldown de la personne retirée
-        if member.id in user_test_cooldowns:
-            del user_test_cooldowns[member.id]
-            save_user_cooldowns()
-            print(f"DEBUG: Removed cooldown for user {member.id} when removed from eval channel")
-        
         embed = discord.Embed(
             title="User Removed",
-            description=f"{member.mention} has been removed from this eval channel and their cooldown has been cleared.",
+            description=f"{member.mention} has been removed from this eval channel.",
             color=discord.Color(15880807)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -2014,16 +2059,16 @@ async def passeval(interaction: discord.Interaction):
             tester=interaction.user
         )
         
-        # MODIFICATION: Embed personnalisé comme dans le screenshot avec nom du serveur, logo et couleur
+        # Create custom embed with server branding
         embed = discord.Embed(
-            title="Evaluation Passed",
-            description=f"@{player.name} | {region} ONLY  Used /passeval. This test is now in the HT3+ category & LT3 has been assigned to @{player.name}.",
             color=discord.Color(15880807)
         )
         embed.set_author(
             name=get_brand_name(interaction.guild), 
             icon_url=get_brand_logo_url(interaction.guild)
         )
+        embed.title = "Evaluation Passed"
+        embed.description = f"Results posted for {player.mention} - LT3 tier earned!\nChannel renamed and role has been automatically assigned."
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
         
