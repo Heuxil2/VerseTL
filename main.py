@@ -714,7 +714,7 @@ embed.set_thumbnail(url=f"https://vzge.me/bust/{ign}.png")
 
 sent = await results_channel.send(content=user.mention, embed=embed)
 
-    try:
+try:
         for e in ["👑", "🥳", "😱", "😭", "😂", "💀"]:
             await sent.add_reaction(e)
     except Exception:
