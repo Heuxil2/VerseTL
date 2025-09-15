@@ -2060,7 +2060,7 @@ async def close(interaction: discord.Interaction):
     embed = discord.Embed(
         title="Channel Closing",
         description="This channel will be closed in 5 seconds…",
-        color=discord.Color.orange()
+        color=discord.Color(15880807)
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
