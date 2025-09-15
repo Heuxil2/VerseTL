@@ -708,7 +708,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
 
     # Icône de l'utilisateur → set_author ou set_thumbnail
     user_avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
-    embed.set_author(name=ign, icon_url=user_avatar_url)
+    embed.set_author(icon_url=user_avatar_url)
 
     # Thumbnail (tête Minecraft)
     embed.set_thumbnail(url=f"https://vzge.me/bust/{ign}.png")
