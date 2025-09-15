@@ -689,22 +689,30 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     if not results_channel:
         return
 
-    embed_color=discord.Color(15880807)
-    # Add user's profile image as author icon to display it as a circle
-    user_avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
-    embed = discord.Embed(color=embed_color)
-    embed.set_author(name=f"**{ign}'s Test Results 🏆**", icon_url=user_avatar_url)
-    embed.description = (
-        f"**Tester:**\n{tester.mention}\n"
-        f"**Region:**\n{region}\n"
-        f"**Minecraft IGN:**\n{ign}\n"
-        f"**Previous Tier:**\n{current_rank}\n"
-        f"**Tier Earned:**\n{earned_rank}"
-    )
-    # Use full body image with 3D skin layers
-    embed.set_thumbnail(url=f"https://mc-heads.net/body/{ign}/100")
+# Embed
+embed_color = 0xF25267 if is_high_result else 0xF25267
+embed = discord.Embed(
+    title=f"**{ign}'s Test Results 🏆**",
+    color=embed_color
+)
 
-    sent = await results_channel.send(content=user.mention, embed=embed)
+title_prefix = "" if is_high_result else ""
+embed.description = (
+    f"{title_prefix}"
+    f"**Tester:**\n{tester.mention}\n"
+    f"**Region:**\n{region}\n"
+    f"**Minecraft IGN:**\n{ign}\n"
+    f"**Previous Tier:**\n{current_rank}\n"
+    f"**Tier Earned:**\n{earned_rank}"
+)
+
+# Icône de l’utilisateur → set_author ou set_thumbnail
+embed.set_author(name=ign, icon_url=user_avatar_url)
+
+# Thumbnail (tête Minecraft)
+embed.set_thumbnail(url=f"https://vzge.me/bust/{ign}.png")
+
+sent = await results_channel.send(content=user.mention, embed=embed)
 
     try:
         for e in ["👑", "🥳", "😱", "😭", "😂", "💀"]:
@@ -1441,18 +1449,18 @@ async def removecooldown(interaction: discord.Interaction, member: discord.Membe
     if had_cooldown:
         await interaction.response.send_message(
             embed=discord.Embed(
-                title="✅ Cooldown Removed",
+                title="Cooldown Removed",
                 description=f"The testing cooldown for {member.mention} has been cleared.",
-                color=discord.Color.green()
+                color=discord.Color(15880807)
             ),
             ephemeral=True
         )
     else:
         await interaction.response.send_message(
             embed=discord.Embed(
-                title="ℹ️ No Active Cooldown",
+                title="No Active Cooldown",
                 description=f"{member.mention} currently has no active cooldown.",
-                color=discord.Color.orange()
+                color=discord.Color(15880807)
             ),
             ephemeral=True
         )
@@ -1467,7 +1475,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
 
     if not has_tester_role(interaction.user):
         embed = discord.Embed(
-            title="❌ Tester Role Required",
+            title="Tester Role Required",
             description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester",
             color=discord.Color(15880807)
         )
@@ -1477,7 +1485,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
     region = get_region_from_channel(channel.name)
     if not region:
         embed = discord.Embed(
-            title="❌ Invalid Channel",
+            title="Invalid Channel",
             description=f"This is not a valid waitlist channel. Channel name: {channel.name}\n\nValid channels are: waitlist-na, waitlist-eu, waitlist-as, waitlist-au",
             color=discord.Color(15880807)
         )
@@ -2133,7 +2141,7 @@ async def results(interaction: discord.Interaction, user: discord.Member, ign: s
         embed=discord.Embed(
             title="Results Posted",
             description="\n".join(confirmation_parts),
-            color=discord.Color.green()
+            color=discord.Color(15880807)
         ),
         ephemeral=True
     )
