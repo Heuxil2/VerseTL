@@ -424,6 +424,32 @@ def has_high_tier(member: discord.Member) -> bool:
         pass
     return False
 
+def get_user_tier_role(member: discord.Member) -> str:
+    """Get the user's current tier role (HT1-LT5) or return 'Unranked' if none found"""
+    tier_roles = ["HT1", "LT1", "HT2", "LT2", "HT3", "LT3", "HT4", "LT4", "HT5", "LT5"]
+    
+    # Check role IDs first (if configured)
+    if ROLE_ID_RANKS:
+        best_rank = None
+        best_tier = None
+        for role in member.roles:
+            role_id_str = str(role.id)
+            if role_id_str in ROLE_ID_RANKS:
+                rank, _, exact = ROLE_ID_RANKS[role_id_str]
+                if best_rank is None or rank < best_rank:
+                    best_rank = rank
+                    best_tier = exact
+        if best_tier:
+            return best_tier
+    
+    # Check role names
+    for tier in tier_roles:
+        role = discord.utils.get(member.roles, name=tier)
+        if role is not None:
+            return tier
+    
+    return "Unranked"
+
 def is_tier_role_obj(role: discord.Role) -> bool:
     if str(role.id) in ROLE_ID_RANKS:
         return True
@@ -675,8 +701,8 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
         f"**Previous Tier:**\n{current_rank}\n"
         f"**Tier Earned:**\n{earned_rank}"
     )
-    # MODIFICATION: Utilise l'image du corps entier avec les skins 3D au lieu de juste la tête
-    embed.set_image(url=f"https://mc-heads.net/body/{ign}/100")
+    # Use full body image with 3D skin layers
+    embed.set_thumbnail(url=f"https://mc-heads.net/body/{ign}/100")
 
     sent = await results_channel.send(content=user.mention, embed=embed)
 
@@ -884,7 +910,7 @@ async def on_ready():
         _ensure_guild_activity_state(g.id)
         _ensure_first_tracker(g.id)
 
-    # MODIFICATION: Fermer toutes les queues au restart et remettre à zéro le "last test at"
+    # Force all queues to close and reset states on bot restart
     global opened_queues, active_testers, waitlists, waitlist_message_ids, waitlist_messages, active_testing_sessions
     opened_queues.clear()
     active_testers.clear()
@@ -893,24 +919,14 @@ async def on_ready():
     waitlist_message_ids.clear()
     waitlist_messages.clear()
     active_testing_sessions.clear()
-    
-    # Forcer la fermeture de toutes les queues et remettre à zéro le "last test at" pour chaque serveur
-    for guild in bot.guilds:
-        if is_guild_authorized(guild.id):
-            _ensure_guild_queue_state(guild.id)
-            _ensure_guild_activity_state(guild.id)
-            for region in ["na", "eu", "as", "au"]:
-                # Forcer la fermeture des queues
-                opened_queues[guild.id].discard(region)
-                if region in active_testers[guild.id]:
-                    active_testers[guild.id][region].clear()
-                # Remettre à zéro le "last test at" pour chaque région
-                last_region_activity[guild.id][region] = None
-            print(f"DEBUG: Reset last test at for all regions in guild {guild.id}")
-    
-    # Sauvegarder l'état réinitialisé
+    print("DEBUG: Cleared queue/tester/waitlist state on startup")
+
+    # Reset "last test at" to None for all guilds/regions on restart
+    for guild_id in last_region_activity:
+        for region in ["na", "eu", "as", "au"]:
+            last_region_activity[guild_id][region] = None
     save_last_region_activity()
-    print("DEBUG: Cleared queue/tester/waitlist state on startup and reset last test at")
+    print("DEBUG: Reset all 'last test at' timestamps to None on startup")
 
     global APP_CHECK_ADDED
     if not APP_CHECK_ADDED:
@@ -1142,13 +1158,13 @@ async def on_message(message):
                 await message.delete()
 
                 link_type = "Discord server invite" if contains_discord_link else "YouTube video"
-                warning_message = f"⚠️ Your message in **{message.guild.name}** was deleted because it contained a {link_type} link. Please avoid sharing such links in the general chat."
+                warning_message = f"Your message in **{message.guild.name}** was deleted because it contained a {link_type} link. Please avoid sharing such links in the general chat."
 
                 try:
                     await message.author.send(warning_message)
                 except discord.Forbidden:
                     warn_embed = discord.Embed(
-                        title="⚠️ Link Removed",
+                        title="Link Removed",
                         description=f"{message.author.mention}, please avoid sharing {link_type} links in this channel.",
                         color=discord.Color.orange()
                     )
@@ -1684,7 +1700,7 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
             ephemeral=True
         )
 
-        # MODIFICATION: Appliquer le cooldown dès que le salon est créé
+        # Apply cooldown immediately when channel is created
         cooldown_days = apply_cooldown(next_user_id, next_user)
         await send_eval_welcome_message(new_channel, region, next_user, interaction.user)
 
@@ -1832,7 +1848,7 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
             pass
 
     active_testing_sessions[member.id] = channel.id
-    # MODIFICATION: Appliquer le cooldown dès que l'utilisateur est ajouté au salon
+    # Apply cooldown immediately when user is added to eval channel
     cooldown_days = apply_cooldown(member.id, member)
 
     welcome_region = target_regions[0] if target_regions else "unknown"
@@ -1955,6 +1971,9 @@ async def passeval(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
+    # Get player's current tier role for previous tier
+    previous_tier = get_user_tier_role(player)
+
     # Rename channel to high-eval-(username) format
     try:
         username = _slug_username(player.display_name)
@@ -1985,24 +2004,21 @@ async def passeval(interaction: discord.Interaction):
             ign=ign,
             region=region,
             gamemode="Crystal",
-            current_rank="N/A",
+            current_rank=previous_tier,  # Use detected tier role
             earned_rank="LT3",
             tester=interaction.user
         )
         
-        # MODIFICATION: Nouvel embed avec nom du serveur et logo du serveur
-        guild = interaction.guild
-        server_name = get_brand_name(guild)
-        server_logo_url = get_brand_logo_url(guild)
-        
+        # Create custom embed with server branding
         embed = discord.Embed(
-            title=server_name,
-            description=f"Results posted for {player.mention} - LT3 tier earned!\nChannel renamed and role has been automatically assigned.",
             color=discord.Color(15880807)
         )
-        
-        if server_logo_url:
-            embed.set_thumbnail(url=server_logo_url)
+        embed.set_author(
+            name=get_brand_name(interaction.guild), 
+            icon_url=get_brand_logo_url(interaction.guild)
+        )
+        embed.title = "Evaluation Passed"
+        embed.description = f"Results posted for {player.mention} - LT3 tier earned!\nChannel renamed and role has been automatically assigned."
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
         
@@ -2137,7 +2153,7 @@ async def purge(interaction: discord.Interaction, limit: int):
     deleted = await interaction.channel.purge(limit=limit)
     await interaction.followup.send(
         embed=discord.Embed(
-            title="🧹 Purge Complete",
+            title="Purge Complete",
             description=f"Deleted {len(deleted)} messages.",
             color=discord.Color.orange()
         ),
