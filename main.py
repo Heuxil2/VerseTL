@@ -2433,7 +2433,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     per_guild_waitlist = [uid for uid in waitlists[region] if guild.get_member(uid)]
     queue_display = "\n".join(
         [f"{i+1}. <@{uid}>" for i, uid in enumerate(per_guild_waitlist)]
-    ) or "*Empty*"
+    ) or "Empty"
 
     testers_display = "\n".join(
         [f"{i+1}. <@{uid}>" for i, uid in enumerate(tester_ids)]
@@ -2453,8 +2453,8 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         title = "Tester(s) Available!"
         description = (
             f"⏱️ The queue updates every 1 minute.\n"
-            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n"
-            f"**Queue**\n{queue_display}\n"
+            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n\n"
+            f"**__Queue__**\n{queue_display}\n\n"
             f"**Testers**\n{testers_display}"
         )
         show_button = True
