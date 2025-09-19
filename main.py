@@ -149,7 +149,7 @@ async def build_tiers(bot: commands.Bot) -> dict:
             rank, disp, exact = best
             ign = None
             try:
-                info = user_info.get(m.id)
+                info = user_info.get(gid, {}).get(m.id)
                 ign = (info or {}).get("ign")
             except Exception:
                 ign = None
@@ -250,9 +250,9 @@ waitlist_messages = {}     # {guild_id: {region: message_obj}}
 # Per-guild queue state
 opened_queues = {}  # {guild_id: set(region)}
 active_testers = {}  # {guild_id: {"na": [], "eu": [], "as": [], "au": []}}
-user_info = {}  # {user_id: {"ign": str, "server": str, "region": str}}
+user_info = {}  # {guild_id: {user_id: {"ign": str, "server": str, "region": str}}}
 last_test_session = datetime.datetime.now()
-# Last Test At par serveur
+# Last Test At par serveur et par région
 last_region_activity = {}  # {guild_id: {"na": datetime|None, "eu": ..., "as": ..., "au": ...}}
 tester_stats = {}  # {user_id: test_count}
 STATS_FILE = "tester_stats.json"
@@ -270,6 +270,10 @@ def _ensure_guild_queue_state(guild_id: int):
 def _ensure_guild_activity_state(guild_id: int):
     if guild_id not in last_region_activity:
         last_region_activity[guild_id] = {"na": None, "eu": None, "as": None, "au": None}
+
+def _ensure_guild_user_info(guild_id: int):
+    if guild_id not in user_info:
+        user_info[guild_id] = {}
 
 # ====== Export web vanilla.json ======
 VANILLA_CACHE = {
@@ -551,7 +555,7 @@ def load_last_region_activity():
                         try:
                             last_region_activity[gid][region] = datetime.datetime.fromisoformat(val)
                             time_ago = datetime.datetime.now() - last_region_activity[gid][region]
-                            print(f"DEBUG: Loaded last activity for guild {gid} {region.upper()}: {time_ago.days} days ago")
+                            print(f"DEBUG: Restored last activity for guild {gid} {region.upper()}: {time_ago.days} days ago")
                         except (ValueError, TypeError) as e:
                             print(f"DEBUG: Error parsing last activity for guild {gid} {region}: {e}")
                             last_region_activity[gid][region] = None
@@ -579,10 +583,14 @@ def get_sheets_service():
 
 def save_user_info():
     try:
-        serializable = {str(uid): data for uid, data in user_info.items()}
+        # Convertir les guild_id et user_id en string pour JSON
+        serializable = {}
+        for guild_id, guild_data in user_info.items():
+            serializable[str(guild_id)] = {str(uid): data for uid, data in guild_data.items()}
         with open(USER_INFO_FILE, "w", encoding="utf-8") as f:
             json.dump(serializable, f, indent=2, ensure_ascii=False)
-        print(f"DEBUG: Saved {len(user_info)} user_info entries to {USER_INFO_FILE}")
+        total_users = sum(len(guild_data) for guild_data in user_info.values())
+        print(f"DEBUG: Saved {total_users} user_info entries across {len(user_info)} guilds to {USER_INFO_FILE}")
     except Exception as e:
         print(f"DEBUG: Error saving user_info: {e}")
 
@@ -592,8 +600,15 @@ def load_user_info():
         if os.path.exists(USER_INFO_FILE):
             with open(USER_INFO_FILE, "r", encoding="utf-8") as f:
                 raw = json.load(f)
-            user_info = {int(uid): data for uid, data in raw.items()}
-            print(f"DEBUG: Loaded {len(user_info)} user_info entries from {USER_INFO_FILE}")
+            user_info = {}
+            for guild_id_str, guild_data in raw.items():
+                try:
+                    guild_id = int(guild_id_str)
+                    user_info[guild_id] = {int(uid): data for uid, data in guild_data.items()}
+                except (ValueError, TypeError):
+                    continue
+            total_users = sum(len(guild_data) for guild_data in user_info.values())
+            print(f"DEBUG: Loaded {total_users} user_info entries across {len(user_info)} guilds from {USER_INFO_FILE}")
         else:
             print("DEBUG: No user_info file found, starting fresh")
             user_info = {}
@@ -695,7 +710,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
         color=embed_color
     )
 
-    title_prefix = f"{user.name}'s Test Results 🏆" if is_high_result else f"{user.name}'s Test Results 🏆"
+    title_prefix = f"**{user.name}'s Test Results 🏆**" if is_high_result else f"**{user.name}'s Test Results 🏆**"
     embed.description = (
         f"{title_prefix}\n\n"
         f"**Tester:**\n{tester.mention}\n"
@@ -827,7 +842,9 @@ class TierSelectView(discord.ui.View):
             return
 
         if self.player:
-            data = user_info.get(self.player.id, {}) if isinstance(user_info, dict) else {}
+            guild_id = self.channel.guild.id
+            _ensure_guild_user_info(guild_id)
+            data = user_info[guild_id].get(self.player.id, {})
             ign = data.get("ign", self.player.display_name)
             region = "NA"
             if self.channel.category:
@@ -917,6 +934,7 @@ async def on_ready():
     for g in bot.guilds:
         _ensure_guild_activity_state(g.id)
         _ensure_first_tracker(g.id)
+        _ensure_guild_user_info(g.id)
 
     # Force all queues to close and reset states on bot restart
     global opened_queues, active_testers, waitlists, waitlist_message_ids, waitlist_messages, active_testing_sessions
@@ -929,12 +947,8 @@ async def on_ready():
     active_testing_sessions.clear()
     print("DEBUG: Cleared queue/tester/waitlist state on startup")
 
-    # Reset "last test at" to None for all guilds/regions on restart
-    for guild_id in last_region_activity:
-        for region in ["na", "eu", "as", "au"]:
-            last_region_activity[guild_id][region] = None
-    save_last_region_activity()
-    print("DEBUG: Reset all 'last test at' timestamps to None on startup")
+    # NE PAS réinitialiser les "last test at" - ils sont restaurés depuis le fichier
+    print("DEBUG: Last test at timestamps restored from saved data")
 
     global APP_CHECK_ADDED
     if not APP_CHECK_ADDED:
@@ -1073,7 +1087,7 @@ async def on_guild_join(guild):
             "This bot is disabled by default on new servers.\n"
             "The owner <@836452038548127764> must run /authorize in this server to enable it."
         ),
-        color=discord.Color(15880807)()
+        color=discord.Color(15880807)
     )
     for channel in guild.text_channels:
         if channel.permissions_for(guild.me).send_messages:
@@ -1276,12 +1290,14 @@ async def on_interaction(interaction: discord.Interaction):
                         return
 
                     user_id = interaction.user.id
-                    if user_id not in user_info:
-                        embed = discord.Embed(title="Form Required", description="You must submit the form in the <#1407100169467727982> channel before joining the queue.", color=discord.Color(15880807))
+                    guild_id = interaction.guild.id
+                    _ensure_guild_user_info(guild_id)
+                    if user_id not in user_info[guild_id]:
+                        embed = discord.Embed(title="Form Required", description="You must submit the form in the request-test channel before joining the queue.", color=discord.Color(15880807))
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
-                    user_region = user_info[user_id]["region"].lower()
+                    user_region = user_info[guild_id][user_id]["region"].lower()
                     if user_region != region:
                         embed = discord.Embed(title="Wrong Region", description=f"Your form was submitted for {user_region.upper()} region, but you're trying to join the {region.upper()} queue.", color=discord.Color(15880807))
                         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1316,7 +1332,7 @@ async def on_interaction(interaction: discord.Interaction):
                                         pass
                                 await update_waitlist_message(interaction.guild, region)
                                 await button_interaction.response.send_message(
-                                    f"",
+                                    f"You have left the {region.upper()} queue.",
                                     ephemeral=True
                                 )
                             except ValueError:
@@ -1544,7 +1560,6 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
                 for role_name in [
                     f"Waitlist-{region.upper()}",
                     f"{region.upper()} Waitlist",
-                    # f"{region.upper()} Matchmaking",  # NE PAS enlever
                     f"waitlist-{region.upper()}",
                     f"waitlist-{region.lower()}",
                     f"{region.lower()} waitlist",
@@ -1577,6 +1592,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
         active_testers[interaction.guild.id][region].append(interaction.user.id)
 
     waitlist_channel = discord.utils.get(interaction.guild.text_channels, name=f"waitlist-{region}")
+    queue_status = f" Cleared {cleared_count} users from queue." if cleared_count > 0 else ""
 
     await interaction.response.send_message(
         embed=discord.Embed(
@@ -1722,7 +1738,6 @@ async def nextuser(interaction: discord.Interaction, channel: discord.TextChanne
         for rn in [
             f"Waitlist-{region.upper()}",
             f"{region.upper()} Waitlist",
-            # f"{region.upper()} Matchmaking",  # garder
             f"waitlist-{region.upper()}",
             f"waitlist-{region.lower()}",
             f"{region.lower()} waitlist",
@@ -1876,7 +1891,6 @@ async def add_to_eval(interaction: discord.Interaction, member: discord.Member):
         possible_role_names = [
             f"Waitlist-{r.upper()}",
             f"{r.upper()} Waitlist",
-            # f"{r.upper()} Matchmaking",  # ne pas retirer
             f"waitlist-{r.upper()}",
             f"waitlist-{r.lower()}",
             f"{r.lower()} waitlist",
@@ -2065,7 +2079,9 @@ async def passeval(interaction: discord.Interaction):
         # Continue even if renaming/moving fails
 
     # Get player info
-    data = user_info.get(player.id, {}) if isinstance(user_info, dict) else {}
+    guild_id = interaction.guild.id
+    _ensure_guild_user_info(guild_id)
+    data = user_info[guild_id].get(player.id, {})
     ign = data.get("ign", player.display_name)
     
     try:
@@ -2346,7 +2362,9 @@ class WaitlistModal(discord.ui.Modal):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        user_info[user_id] = {
+        guild_id = interaction.guild.id
+        _ensure_guild_user_info(guild_id)
+        user_info[guild_id][user_id] = {
             "ign": self.minecraft_ign.value,
             "server": self.minecraft_server.value,
             "region": region_input.upper(),
@@ -2439,11 +2457,11 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
             f"**Queue**\n{queue_display}\n\n"
             f"**Testers**\n{testers_display}"
         )
-        embed = discord.Embed(title=title, description=description, color=color)
         show_button = True
         ping_content = "@here"
     else:
         color = discord.Color(15880807)
+        title = "No Testers Online"
         description = (
             f"No testers for your region are available at this time.\n"
             f"You will be pinged when a tester is available.\n"
@@ -2452,13 +2470,13 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         )
         show_button = False
         ping_content = None
-        embed = discord.Embed(description=description, color=color)
 
-    embed = discord.Embed(description=description, color=color)
-
+    # Créer l'embed UNE SEULE FOIS après le bloc if/else
+    embed = discord.Embed(title=title, description=description, color=color)
+    
+    # Ajouter l'auteur seulement pour "No Testers Online"
     if not (region in guild_queue and tester_ids):
         embed.set_author(name=get_brand_name(guild), icon_url=get_brand_logo_url(guild))
-        embed.title = "No Testers Online"
 
     view = discord.ui.View()
     if show_button:
@@ -2597,7 +2615,9 @@ async def notify_first_in_queue(guild: discord.Guild, region: str, tester: disco
 
 async def send_eval_welcome_message(channel: discord.TextChannel, region: str, player: discord.Member | None, tester: discord.Member | None):
     try:
-        user_data = user_info.get(player.id, {}) if player else {}
+        guild_id = channel.guild.id
+        _ensure_guild_user_info(guild_id)
+        user_data = user_info[guild_id].get(player.id, {}) if player else {}
         ign = user_data.get('ign', 'N/A')
         server = user_data.get('server', 'N/A')
         player_mention = player.mention if player else "Player"
@@ -2660,9 +2680,11 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
 
 def _display_name_or_ign(user_id: int, guild: discord.Guild) -> str:
     try:
-        info = user_info.get(user_id)
+        guild_id = guild.id
+        _ensure_guild_user_info(guild_id)
+        info = user_info[guild_id].get(user_id)
         if info and info.get("ign"):
-            return info["igsn"]
+            return info["ign"]
     except Exception:
         pass
     member = guild.get_member(user_id)
