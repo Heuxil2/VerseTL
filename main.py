@@ -692,13 +692,12 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     # Embed
     embed_color = 0xF25267 if is_high_result else 0xF25267
     embed = discord.Embed(
-        title=f"{ign}'s Test Results 🏆",
         color=embed_color
     )
 
-    title_prefix = "" if is_high_result else ""
+    title_prefix = f"**{user.name}'s Test Results 🏆**" if is_high_result else f"**{user.name}'s Test Results 🏆**"
     embed.description = (
-        f"{title_prefix}"
+        f"{title_prefix}\n"
         f"**Tester:**\n{tester.mention}\n"
         f"**Region:**\n{region}\n"
         f"**Minecraft IGN:**\n{ign}\n"
@@ -708,7 +707,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
 
     # Icône de l'utilisateur → set_author ou set_thumbnail
     user_avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
-    embed.set_author(name=user.display_name, icon_url=user_avatar_url)
+    embed.set_author(name=user.name, icon_url=user_avatar_url)
 
     # Thumbnail (tête Minecraft)
     embed.set_thumbnail(url=f"https://vzge.me/bust/{ign}.png")
@@ -1649,7 +1648,7 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="nextuser", description="Create a private channel for the next person in waitlist (Tester role required)")
+@bot.tree.command(name="next", description="Create a private channel for the next person in waitlist (Tester role required)")
 @app_commands.describe(channel="The waitlist channel to get the next person from")
 async def nextuser(interaction: discord.Interaction, channel: discord.TextChannel = None):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
