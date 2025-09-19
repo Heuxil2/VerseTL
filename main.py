@@ -692,7 +692,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     # Embed
     embed_color = 0xF25267 if is_high_result else 0xF25267
     embed = discord.Embed(
-        title=f"**{ign}'s Test Results 🏆**",
+        title=f"{ign}'s Test Results 🏆",
         color=embed_color
     )
 
@@ -1507,7 +1507,7 @@ async def remove(interaction: discord.Interaction, member: discord.Member):
             ephemeral=True
         )
 
-@bot.tree.command(name="startqueue", description="Start the queue for testing (Tester role required)")
+@bot.tree.command(name="start", description="Start the queue for testing (Tester role required)")
 @app_commands.describe(channel="The waitlist channel to start the queue for")
 async def startqueue(interaction: discord.Interaction, channel: discord.TextChannel = None):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
@@ -1592,7 +1592,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
     await maybe_notify_queue_top_change(interaction.guild, region)
     await update_waitlist_message(interaction.guild, region)
 
-@bot.tree.command(name="stopqueue", description="Remove yourself from active testers (Tester role required)")
+@bot.tree.command(name="stop", description="Remove yourself from active testers (Tester role required)")
 @app_commands.describe(channel="The waitlist channel to leave as tester")
 async def stopqueue(interaction: discord.Interaction, channel: discord.TextChannel = None):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
