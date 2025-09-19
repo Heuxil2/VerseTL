@@ -1293,7 +1293,7 @@ async def on_interaction(interaction: discord.Interaction):
                     guild_id = interaction.guild.id
                     _ensure_guild_user_info(guild_id)
                     if user_id not in user_info[guild_id]:
-                        embed = discord.Embed(title="Form Required", description="You must submit the form in the request-test channel before joining the queue.", color=discord.Color(15880807))
+                        embed = discord.Embed(title="Form Required", description="You must submit the form in the <#1407100169467727982> before joining the queue.", color=discord.Color(15880807))
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
@@ -2282,18 +2282,18 @@ class WaitlistModal(discord.ui.Modal):
 
         self.minecraft_ign = discord.ui.TextInput(
             label="Enter Your Minecraft IGN",
-            placeholder="heuxil",
+            placeholder="",
             required=True,
             max_length=16)
 
         self.minecraft_server = discord.ui.TextInput(
             label="Preferred Minecraft Server (Must Be Known)",
-            placeholder="Enter server name",
+            placeholder="",
             required=True,
             max_length=100)
 
         self.region = discord.ui.TextInput(label="Region (NA/EU/AS/AU)",
-                                           placeholder="NA",
+                                           placeholder="",
                                            required=True,
                                            max_length=2)
 
@@ -2304,7 +2304,7 @@ class WaitlistModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         if not is_guild_authorized(getattr(interaction.guild, "id", None)):
             embed = discord.Embed(
-                title="⛔ Unauthorized Server",
+                title="Unauthorized Server",
                 description="This server is not authorized to use this bot. Ask <@836452038548127764> to run /authorize.",
                 color=discord.Color(15880807)
             )
@@ -2313,7 +2313,7 @@ class WaitlistModal(discord.ui.Modal):
 
         if discord.utils.get(interaction.user.roles, name="Tierlist Restricted"):
             embed = discord.Embed(
-                title="⛔ Access Denied",
+                title="Access Denied",
                 description="You are currently restricted from entering the queue.",
                 color=discord.Color(15880807)
             )
@@ -2332,9 +2332,9 @@ class WaitlistModal(discord.ui.Modal):
                 minutes = (time_remaining.seconds % 3600) // 60
 
                 cooldown_embed = discord.Embed(
-                    title="⏰ Cooldown Active",
+                    title="Cooldown Active",
                     description=f"You must wait **{days} days, {hours} hours, and {minutes} minutes** before you can test again.",
-                    color=0xff0000
+                    color=discord.Color(15880807)
                 )
 
                 await interaction.response.send_message(embed=cooldown_embed, ephemeral=True)
@@ -2349,7 +2349,7 @@ class WaitlistModal(discord.ui.Modal):
             existing_channel = interaction.guild.get_channel(existing_channel_id)
 
             if existing_channel:
-                embed = discord.Embed(title="⚠️ Active Session Exists", description=f"You already have an active testing session in {existing_channel.mention}. Please complete that test first.", color=discord.Color(15880807))
+                embed = discord.Embed(title="Active Session Exists", description=f"You already have an active testing session in {existing_channel.mention}. Please complete that test first.", color=discord.Color(15880807))
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
             else:
@@ -2358,7 +2358,7 @@ class WaitlistModal(discord.ui.Modal):
         region_input = self.region.value.lower().strip()
         valid_regions = ["na", "eu", "as", "au"]
         if region_input not in valid_regions:
-            embed = discord.Embed(title="❌ Invalid Region", description="Invalid region. Please use NA, EU, AS, or AU.", color=discord.Color(15880807))
+            embed = discord.Embed(title="Invalid Region", description="Invalid region. Please use NA, EU, AS, or AU.", color=discord.Color(15880807))
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
@@ -2433,7 +2433,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     per_guild_waitlist = [uid for uid in waitlists[region] if guild.get_member(uid)]
     queue_display = "\n".join(
         [f"{i+1}. <@{uid}>" for i, uid in enumerate(per_guild_waitlist)]
-    ) or "*The queue is currently empty! Press below to join.*"
+    ) or "*Empty*"
 
     testers_display = "\n".join(
         [f"{i+1}. <@{uid}>" for i, uid in enumerate(tester_ids)]
@@ -2453,8 +2453,8 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         title = "Tester(s) Available!"
         description = (
             f"⏱️ The queue updates every 1 minute.\n"
-            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n\n"
-            f"**Queue**\n{queue_display}\n\n"
+            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n"
+            f"**Queue**\n{queue_display}\n"
             f"**Testers**\n{testers_display}"
         )
         show_button = True
