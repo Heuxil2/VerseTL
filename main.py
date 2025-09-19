@@ -2166,7 +2166,7 @@ async def close(interaction: discord.Interaction):
     except Exception:
         pass
 
-@bot.tree.command(name="results", description="Post tier test results")
+@bot.tree.command(name="tier", description="Post tier test results")
 @app_commands.describe(
     user="The user who took the test",
     ign="Minecraft IGN of the player",
