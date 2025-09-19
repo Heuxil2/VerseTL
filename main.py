@@ -2438,8 +2438,8 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
             f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n\n"
             f"**Queue**\n{queue_display}\n\n"
             f"**Testers**\n{testers_display}"
-    )
-            embed = discord.Embed(title=title, description=description, color=color)
+        )
+        embed = discord.Embed(title=title, description=description, color=color)
         show_button = True
         ping_content = "@here"
     else:
@@ -2452,6 +2452,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         )
         show_button = False
         ping_content = None
+        embed = discord.Embed(description=description, color=color)
 
     embed = discord.Embed(description=description, color=color)
 
