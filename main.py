@@ -1474,8 +1474,8 @@ async def removecooldown(interaction: discord.Interaction, member: discord.Membe
     else:
         await interaction.response.send_message(
             embed=discord.Embed(
-                title="No Active Cooldown",
-                description=f"{member.mention} currently has no active cooldown.",
+                title="Cooldown Removed",
+                description=f"The testing cooldown for {member.mention} has been cleared.",
                 color=discord.Color(15880807)
             ),
             ephemeral=True
@@ -1592,7 +1592,6 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
         active_testers[interaction.guild.id][region].append(interaction.user.id)
 
     waitlist_channel = discord.utils.get(interaction.guild.text_channels, name=f"waitlist-{region}")
-    queue_status = f" Cleared {cleared_count} users from queue." if cleared_count > 0 else ""
 
     await interaction.response.send_message(
         embed=discord.Embed(
@@ -2091,7 +2090,6 @@ async def passeval(interaction: discord.Interaction):
             user=player,
             ign=ign,
             region=region,
-            gamemode="Crystal",
             current_rank=previous_tier,  # Use detected tier role
             earned_rank="LT3",
             tester=interaction.user
@@ -2453,9 +2451,9 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         title = "Tester(s) Available!"
         description = (
             f"⏱️ The queue updates every 1 minute.\n"
-            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n\n"
-            f"**__Queue__**\n{queue_display}\n\n"
-            f"**Testers**\n{testers_display}"
+            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n"
+            f"### __Queue:__\n{queue_display}\n"
+            f"### Testers\n{testers_display}"
         )
         show_button = True
         ping_content = "@here"
