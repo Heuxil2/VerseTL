@@ -1577,7 +1577,6 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
         active_testers[interaction.guild.id][region].append(interaction.user.id)
 
     waitlist_channel = discord.utils.get(interaction.guild.text_channels, name=f"waitlist-{region}")
-    queue_status = f"\nCleared {cleared_count} users from the previous queue." if cleared_count > 0 else ""
 
     await interaction.response.send_message(
         embed=discord.Embed(
@@ -2435,10 +2434,12 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         color = discord.Color.from_rgb(220, 80, 120)
         title = "Tester(s) Available!"
         description = (
+            f"⏱️ The queue updates every 1 minute.\n"
             f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n\n"
             f"**Queue**\n{queue_display}\n\n"
             f"**Testers**\n{testers_display}"
     )
+    embed = discord.Embed(title=title, description=description, color=color)
         show_button = True
         ping_content = "@here"
     else:
