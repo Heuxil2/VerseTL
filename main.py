@@ -2440,8 +2440,8 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
             f"**Testers**\n{testers_display}"
     )
     embed = discord.Embed(title=title, description=description, color=color)
-        show_button = True
-        ping_content = "@here"
+    show_button = True
+    ping_content = "@here"
     else:
         color = discord.Color(15880807)
         description = (
