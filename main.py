@@ -708,7 +708,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
 
     # Icône de l'utilisateur → set_author ou set_thumbnail
     user_avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
-    embed.set_author(icon_url=user_avatar_url)
+    embed.set_author(name=user.display_name, icon_url=user_avatar_url)
 
     # Thumbnail (tête Minecraft)
     embed.set_thumbnail(url=f"https://vzge.me/bust/{ign}.png")
@@ -2024,15 +2024,6 @@ async def passeval(interaction: discord.Interaction):
     # Get player's current tier role for previous tier
     previous_tier = get_user_tier_role(player)
 
-    # Rename channel to high-eval-(username) format
-    try:
-        username = _slug_username(player.display_name)
-        new_channel_name = f"high-eval-{username}"
-        await ch.edit(name=new_channel_name, reason=f"Player {player.display_name} passed eval")
-    except Exception as e:
-        print(f"DEBUG: Failed to rename channel: {e}")
-        # Continue even if renaming fails
-
     # Determine region from channel category
     region = "NA"
     if ch.category:
@@ -2041,6 +2032,39 @@ async def passeval(interaction: discord.Interaction):
             if r in cname:
                 region = r.upper()
                 break
+
+    # Rename channel to high-eval-(username) format and move to High Eval category
+    try:
+        username = _slug_username(player.display_name)
+        new_channel_name = f"high-eval-{username}"
+        
+        # Find or create the High Eval (Region) category
+        high_eval_category_name = f"High Eval {region}"
+        high_eval_category = discord.utils.get(interaction.guild.categories, name=high_eval_category_name)
+        
+        # If category doesn't exist, create it
+        if not high_eval_category:
+            try:
+                high_eval_category = await interaction.guild.create_category(
+                    name=high_eval_category_name,
+                    reason=f"Created for high eval channels in {region} region"
+                )
+                print(f"DEBUG: Created new category: {high_eval_category_name}")
+            except Exception as e:
+                print(f"DEBUG: Failed to create category {high_eval_category_name}: {e}")
+                high_eval_category = None
+        
+        # Edit channel name and move to high eval category
+        await ch.edit(
+            name=new_channel_name,
+            category=high_eval_category,
+            reason=f"Player {player.display_name} passed eval - moved to {high_eval_category_name}"
+        )
+        print(f"DEBUG: Moved channel {new_channel_name} to category {high_eval_category_name}")
+        
+    except Exception as e:
+        print(f"DEBUG: Failed to rename/move channel: {e}")
+        # Continue even if renaming/moving fails
 
     # Get player info
     data = user_info.get(player.id, {}) if isinstance(user_info, dict) else {}
@@ -2068,9 +2092,9 @@ async def passeval(interaction: discord.Interaction):
             icon_url=get_brand_logo_url(interaction.guild)
         )
         embed.title = "Evaluation Passed"
-        embed.description = f"Results posted for {player.mention} - LT3 tier earned!\nChannel renamed and role has been automatically assigned."
+        embed.description = f"{interaction.user.mention} `/passeval`. This test is now in the **HT3+** category & **LT3** has been assigned to {player.mention}."
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed)
         
     except Exception as e:
         embed = discord.Embed(
@@ -2637,7 +2661,7 @@ def _display_name_or_ign(user_id: int, guild: discord.Guild) -> str:
     try:
         info = user_info.get(user_id)
         if info and info.get("ign"):
-            return info["ign"]
+            return info["igsn"]
     except Exception:
         pass
     member = guild.get_member(user_id)
