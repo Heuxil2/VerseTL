@@ -695,9 +695,9 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
         color=embed_color
     )
 
-    title_prefix = f"**{user.name}'s Test Results 🏆**" if is_high_result else f"**{user.name}'s Test Results 🏆**"
+    title_prefix = f"{user.name}'s Test Results 🏆" if is_high_result else f"{user.name}'s Test Results 🏆"
     embed.description = (
-        f"{title_prefix}\n"
+        f"{title_prefix}\n\n"
         f"**Tester:**\n{tester.mention}\n"
         f"**Region:**\n{region}\n"
         f"**Minecraft IGN:**\n{ign}\n"
@@ -1073,7 +1073,7 @@ async def on_guild_join(guild):
             "This bot is disabled by default on new servers.\n"
             "The owner <@836452038548127764> must run /authorize in this server to enable it."
         ),
-        color=discord.Color.blurple()
+        color=discord.Color(15880807)()
     )
     for channel in guild.text_channels:
         if channel.permissions_for(guild.me).send_messages:
@@ -2433,12 +2433,12 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
 
     if region in guild_queue and tester_ids:
         color = discord.Color.from_rgb(220, 80, 120)
+        title = "Tester(s) Available!"
         description = (
-            f"## Tester(s) Available!\n\n"
-            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n"
+            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n\n"
             f"**Queue**\n{queue_display}\n\n"
             f"**Testers**\n{testers_display}"
-        )
+    )
         show_button = True
         ping_content = "@here"
     else:
