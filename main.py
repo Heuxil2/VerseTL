@@ -252,8 +252,8 @@ opened_queues = {}  # {guild_id: set(region)}
 active_testers = {}  # {guild_id: {"na": [], "eu": [], "as": [], "au": []}}
 user_info = {}  # {guild_id: {user_id: {"ign": str, "server": str, "region": str}}}
 last_test_session = datetime.datetime.now()
-# Last Test At par serveur et par région
-last_region_activity = {}  # {guild_id: {"na": datetime|None, "eu": ..., "as": ..., "au": ...}}
+# Last Test At par serveur, par région ET par canal
+last_region_activity = {}  # {guild_id: {channel_id: {"na": datetime|None, "eu": ..., "as": ..., "au": ...}}}
 tester_stats = {}  # {user_id: test_count}
 STATS_FILE = "tester_stats.json"
 USER_INFO_FILE = "user_info.json"
@@ -267,13 +267,21 @@ def _ensure_guild_queue_state(guild_id: int):
     if guild_id not in active_testers:
         active_testers[guild_id] = {"na": [], "eu": [], "as": [], "au": []}
 
-def _ensure_guild_activity_state(guild_id: int):
+def _ensure_guild_activity_state(guild_id: int, channel_id: int = None):
     if guild_id not in last_region_activity:
-        last_region_activity[guild_id] = {"na": None, "eu": None, "as": None, "au": None}
+        last_region_activity[guild_id] = {}
+    if channel_id and channel_id not in last_region_activity[guild_id]:
+        last_region_activity[guild_id][channel_id] = {"na": None, "eu": None, "as": None, "au": None}
 
 def _ensure_guild_user_info(guild_id: int):
     if guild_id not in user_info:
         user_info[guild_id] = {}
+
+def format_datetime_custom(dt: datetime.datetime) -> str:
+    """Format datetime to 'September 20, 2025 12:13 PM' format"""
+    if dt is None:
+        return "Never"
+    return dt.strftime("%B %d, %Y %I:%M %p")
 
 # ====== Export web vanilla.json ======
 VANILLA_CACHE = {
@@ -526,13 +534,15 @@ def load_user_cooldowns():
 def save_last_region_activity():
     try:
         data = {}
-        for gid, regions in last_region_activity.items():
+        for gid, channels in last_region_activity.items():
             data[str(gid)] = {}
-            for region, last_time in regions.items():
-                data[str(gid)][region] = last_time.isoformat() if last_time is not None else None
+            for channel_id, regions in channels.items():
+                data[str(gid)][str(channel_id)] = {}
+                for region, last_time in regions.items():
+                    data[str(gid)][str(channel_id)][region] = last_time.isoformat() if last_time is not None else None
         with open(LAST_ACTIVITY_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2)
-        print(f"DEBUG: Saved last region activities (per guild) to {LAST_ACTIVITY_FILE}")
+        print(f"DEBUG: Saved last region activities (per guild and channel) to {LAST_ACTIVITY_FILE}")
     except Exception as e:
         print(f"DEBUG: Error saving last region activities: {e}")
 
@@ -543,22 +553,46 @@ def load_last_region_activity():
         if os.path.exists(LAST_ACTIVITY_FILE):
             with open(LAST_ACTIVITY_FILE, 'r', encoding='utf-8') as f:
                 loaded = json.load(f)
-            for gid_str, regions in loaded.items():
+            for gid_str, channels in loaded.items():
                 try:
                     gid = int(gid_str)
                 except Exception:
                     continue
-                last_region_activity[gid] = {"na": None, "eu": None, "as": None, "au": None}
-                for region in ["na", "eu", "as", "au"]:
-                    val = regions.get(region)
-                    if val:
+                last_region_activity[gid] = {}
+                
+                # Support both old format (direct regions) and new format (channels)
+                if isinstance(list(channels.values())[0] if channels else {}, dict) and any(isinstance(v, dict) for v in channels.values()):
+                    # New format: {guild_id: {channel_id: {region: datetime}}}
+                    for channel_id_str, regions in channels.items():
                         try:
-                            last_region_activity[gid][region] = datetime.datetime.fromisoformat(val)
-                            time_ago = datetime.datetime.now() - last_region_activity[gid][region]
-                            print(f"DEBUG: Restored last activity for guild {gid} {region.upper()}: {time_ago.days} days ago")
-                        except (ValueError, TypeError) as e:
-                            print(f"DEBUG: Error parsing last activity for guild {gid} {region}: {e}")
-                            last_region_activity[gid][region] = None
+                            channel_id = int(channel_id_str)
+                        except Exception:
+                            continue
+                        last_region_activity[gid][channel_id] = {"na": None, "eu": None, "as": None, "au": None}
+                        for region in ["na", "eu", "as", "au"]:
+                            val = regions.get(region)
+                            if val:
+                                try:
+                                    last_region_activity[gid][channel_id][region] = datetime.datetime.fromisoformat(val)
+                                    time_ago = datetime.datetime.now() - last_region_activity[gid][channel_id][region]
+                                    print(f"DEBUG: Restored last activity for guild {gid} channel {channel_id} {region.upper()}: {time_ago.days} days ago")
+                                except (ValueError, TypeError) as e:
+                                    print(f"DEBUG: Error parsing last activity for guild {gid} channel {channel_id} {region}: {e}")
+                                    last_region_activity[gid][channel_id][region] = None
+                else:
+                    # Old format compatibility: {guild_id: {region: datetime}} - create a default channel entry
+                    default_channel_id = 0  # Use 0 as default for backward compatibility
+                    last_region_activity[gid][default_channel_id] = {"na": None, "eu": None, "as": None, "au": None}
+                    for region in ["na", "eu", "as", "au"]:
+                        val = channels.get(region)
+                        if val:
+                            try:
+                                last_region_activity[gid][default_channel_id][region] = datetime.datetime.fromisoformat(val)
+                                time_ago = datetime.datetime.now() - last_region_activity[gid][default_channel_id][region]
+                                print(f"DEBUG: Migrated last activity for guild {gid} {region.upper()}: {time_ago.days} days ago")
+                            except (ValueError, TypeError) as e:
+                                print(f"DEBUG: Error parsing last activity for guild {gid} {region}: {e}")
+                                last_region_activity[gid][default_channel_id][region] = None
         else:
             print(f"DEBUG: No existing last activity file found, starting fresh")
     except Exception as e:
@@ -769,10 +803,12 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     try:
         reg = (region or "").lower()
         if reg in ("na", "eu", "as", "au") and guild:
-            _ensure_guild_activity_state(guild.id)
-            last_region_activity[guild.id][reg] = datetime.datetime.now()
+            # Update for the results channel (or use a default channel ID)
+            channel_id = interaction.channel.id if hasattr(interaction, 'channel') and interaction.channel else 0
+            _ensure_guild_activity_state(guild.id, channel_id)
+            last_region_activity[guild.id][channel_id][reg] = datetime.datetime.now()
             save_last_region_activity()
-            print(f"DEBUG: Updated last test at for guild {guild.id} region {reg.upper()}")
+            print(f"DEBUG: Updated last test at for guild {guild.id} channel {channel_id} region {reg.upper()}")
     except Exception as e:
         print(f"DEBUG: Failed updating last test at: {e}")
 
@@ -1573,10 +1609,10 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
     _ensure_guild_queue_state(interaction.guild.id)
     opened_queues[interaction.guild.id].add(region)
 
-    _ensure_guild_activity_state(interaction.guild.id)
-    last_region_activity[interaction.guild.id][region] = datetime.datetime.now()
+    _ensure_guild_activity_state(interaction.guild.id, channel.id)
+    last_region_activity[interaction.guild.id][channel.id][region] = datetime.datetime.now()
     save_last_region_activity()
-    print(f"DEBUG: Updated and saved last activity for guild {interaction.guild.id} {region.upper()}")
+    print(f"DEBUG: Updated and saved last activity for guild {interaction.guild.id} channel {channel.id} {region.upper()}")
 
     if interaction.user.id not in active_testers[interaction.guild.id][region]:
         active_testers[interaction.guild.id][region].append(interaction.user.id)
@@ -1628,10 +1664,10 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
         active_testers[interaction.guild.id][region].remove(interaction.user.id)
         if not active_testers[interaction.guild.id][region]:
             opened_queues[interaction.guild.id].discard(region)
-            _ensure_guild_activity_state(interaction.guild.id)
-            last_region_activity[interaction.guild.id][region] = datetime.datetime.now()
+            _ensure_guild_activity_state(interaction.guild.id, channel.id)
+            last_region_activity[interaction.guild.id][channel.id][region] = datetime.datetime.now()
             save_last_region_activity()
-            print(f"DEBUG: Updated last test at for guild {interaction.guild.id} region {region.upper()} when queue closed")
+            print(f"DEBUG: Updated last test at for guild {interaction.guild.id} channel {channel.id} region {region.upper()} when queue closed")
 
         await interaction.response.send_message(
             embed=discord.Embed(
@@ -2431,21 +2467,25 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
 
     await maybe_notify_queue_top_change(guild, region)
 
-    region_last_active = last_region_activity.get(guild.id, {}).get(region)
-    if region_last_active:
-        timestamp_unix = int(region_last_active.timestamp())
-        timestamp = f"<t:{timestamp_unix}:R>"
-    else:
-        timestamp = "Never"
+    # Get last activity for this specific channel and region
+    channel_id = channel.id
+    region_last_active = None
+    if guild.id in last_region_activity:
+        if channel_id in last_region_activity[guild.id]:
+            region_last_active = last_region_activity[guild.id][channel_id].get(region)
+        elif 0 in last_region_activity[guild.id]:  # Backward compatibility with default channel
+            region_last_active = last_region_activity[guild.id][0].get(region)
+    
+    timestamp = format_datetime_custom(region_last_active)
 
     if region in guild_queue and tester_ids:
         color = discord.Color.from_rgb(220, 80, 120)
         title = "Tester(s) Available!"
         description = (
             f"⏱️ The queue updates every 1 minute.\n"
-            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n"
-            f"### __Queue:__\n{queue_display}\n"
-            f"### Testers\n{testers_display}"
+            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n\n"
+            f"**__Queue:__**\n{queue_display}\n\n"
+            f"**Active Testers:**\n{testers_display}"
         )
         show_button = True
         ping_content = "@here"
