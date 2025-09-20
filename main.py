@@ -2479,7 +2479,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     
     timestamp = format_datetime_custom(region_last_active)
 
-    if region in guild_queue and tester_ids:
+if region in guild_queue and tester_ids:
     embed = discord.Embed(
         title="Tester(s) Available!",
         description=(
@@ -2492,26 +2492,34 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
 
     embed.add_field(
         name="__Queue:__",
-        value=f"{queue_display}",   # ← f-string
+        value=f"{queue_display}",
         inline=False
     )
 
     embed.add_field(
         name="Active Testers:",
-        value=f"{testers_display}", # ← f-string
+        value=f"{testers_display}",
         inline=False
     )
-    else:
-        color = discord.Color(15880807)
-        title = "No Testers Online"
-        description = (
+
+    show_button = True
+    ping_content = "@here"
+
+else:
+    embed = discord.Embed(
+        title="No Testers Online",
+        description=(
             f"No testers for your region are available at this time.\n"
             f"You will be pinged when a tester is available.\n"
             f"Check back later!\n\n"
             f"Last Test At: {timestamp}"
-        )
-        show_button = False
-        ping_content = None
+        ),
+        colour=discord.Color(15880807),
+        timestamp=datetime.now()
+    )
+
+    show_button = False
+    ping_content = None
 
     # Créer l'embed UNE SEULE FOIS après le bloc if/else
     embed = discord.Embed(title=title, description=description, color=color)
