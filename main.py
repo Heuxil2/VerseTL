@@ -1303,7 +1303,7 @@ async def on_interaction(interaction: discord.Interaction):
             if _is_request_channel(interaction.channel):
                 if discord.utils.get(interaction.user.roles, name="Tierlist Restricted"):
                     embed = discord.Embed(
-                        title="⛔ Access Denied",
+                        title="Access Denied",
                         description="You are currently restricted from entering the queue.",
                         color=discord.Color(15880807)
                     )
@@ -1318,7 +1318,7 @@ async def on_interaction(interaction: discord.Interaction):
                 if interaction.channel.name.lower() == f"waitlist-{region}":
                     if discord.utils.get(interaction.user.roles, name="Tierlist Restricted"):
                         embed = discord.Embed(
-                            title="⛔ Access Denied",
+                            title="Access Denied",
                             description="You are currently restricted from joining the queue.",
                             color=discord.Color(15880807)
                         )
@@ -2483,8 +2483,10 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         title = "Tester(s) Available!"
         description = (
             f"⏱️ The queue updates every 1 minute.\n"
-            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n\n"
-            f"**__Queue:__**\n{queue_display}\n\n"
+            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n"
+            f"\u200B\n"  # ← espace invisible qui crée une ligne vide
+            f"**__Queue:__**\n{queue_display}\n"
+            f"\u200B\n"  # ← espace invisible qui crée une ligne vide
             f"**Active Testers:**\n{testers_display}"
         )
         show_button = True
@@ -2687,7 +2689,7 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
             f"No testers for your region are available at this time.\n"
             f"You will be pinged when a tester is available.\n"
             f"Check back later!\n\n"
-            f"Last Test At: {timestamp}"
+            f"Last Test At: <t:{timestamp}:R>"
         ),
         color=discord.Color(15880807)
     )
