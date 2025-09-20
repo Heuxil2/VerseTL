@@ -2480,33 +2480,38 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     timestamp = format_datetime_custom(region_last_active)
 
     if region in guild_queue and tester_ids:
-        color = discord.Color.from_rgb(220, 80, 120)
-        title = "Tester(s) Available!"
-        description = (
-            f"⏱️ The queue updates every 1 minute.\n"
-            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n\n"
-            f"**__Queue:__**\n{queue_display}\n\n"
-            f"**Active Testers:**\n{testers_display}"
-        )
         show_button = True
         ping_content = "@here"
     else:
-        color = discord.Color(15880807)
-        title = "No Testers Online"
-        description = (
-            f"No testers for your region are available at this time.\n"
-            f"You will be pinged when a tester is available.\n"
-            f"Check back later!\n\n"
-            f"Last Test At: {timestamp}"
-        )
         show_button = False
         ping_content = None
 
-    # Créer l'embed UNE SEULE FOIS après le bloc if/else
-    embed = discord.Embed(title=title, description=description, color=color)
-    
-    # Ajouter l'auteur seulement pour "No Testers Online"
-    if not (region in guild_queue and tester_ids):
+    # Créer l'embed conditionnel
+    if region in guild_queue and tester_ids:
+        # Tester(s) Available embed with new format
+        embed = discord.Embed(title="Tester(s) Available!",
+                              description="⏱️ The queue updates every 1 minute.\nUse `/leave` if you wish to be removed from the waitlist or queue.",
+                              colour=0xdc5078,
+                              timestamp=datetime.datetime.now())
+        
+        embed.add_field(name="__Queue:__",
+                        value=queue_display,
+                        inline=False)
+        embed.add_field(name="Active Testers:",
+                        value=testers_display,
+                        inline=False)
+    else:
+        # No Testers Online embed
+        embed = discord.Embed(
+            title="No Testers Online",
+            description=(
+                f"No testers for your region are available at this time.\n"
+                f"You will be pinged when a tester is available.\n"
+                f"Check back later!\n\n"
+                f"Last Test At: {timestamp}"
+            ),
+            color=discord.Color(15880807)
+        )
         embed.set_author(name=get_brand_name(guild), icon_url=get_brand_logo_url(guild))
 
     view = discord.ui.View()
