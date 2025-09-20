@@ -2479,7 +2479,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     
     timestamp = format_datetime_custom(region_last_active)
 
-if region in guild_queue and tester_ids:
+    if region in guild_queue and tester_ids:
     embed = discord.Embed(
         title="Tester(s) Available!",
         description=(
