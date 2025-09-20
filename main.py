@@ -2482,14 +2482,24 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     if region in guild_queue and tester_ids:
         color = discord.Color.from_rgb(220, 80, 120)
         title = "Tester(s) Available!"
+
+    # Description = seulement les avis du haut
         description = (
-            f"⏱️ The queue updates every 1 minute.\n"
-            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n"
-            f"\u200B\n"  # ← espace invisible qui crée une ligne vide
-            f"**__Queue:__**\n{queue_display}\n"
-            f"\u200B\n"  # ← espace invisible qui crée une ligne vide
-            f"**Active Testers:**\n{testers_display}"
-        )
+            "⏱️ The queue updates every 1 minute.\n"
+            "Use **/leave** if you wish to be removed from the waitlist or queue."
+    )
+
+    # États vides propres
+        qd = queue_display.strip() if queue_display.strip() else "Empty"
+        td = testers_display.strip() if testers_display.strip() else "None"
+
+    # NEW: champs de l’embed (name, value, inline)
+        fields = [
+            ("**__Queue:__**", qd, False),
+            ("\u200B", "\u200B", False),          # spacer discret
+            ("**Active Testers:**", td, False),
+    ]
+
         show_button = True
         ping_content = "@here"
     else:
