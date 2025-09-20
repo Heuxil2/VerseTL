@@ -2479,18 +2479,28 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     
     timestamp = format_datetime_custom(region_last_active)
 
-    if region in guild_queue and tester_ids:
-    embed = discord.Embed(title="Tester(s) Available!",
-            description="⏱️ The queue updates every 1 minute.\nUse `/leave` if you wish to be removed from the waitlist or queue.",
-            colour=0xdc5078,
-            timestamp=datetime.now())
+if region in guild_queue and tester_ids:
+    embed = discord.Embed(
+        title="Tester(s) Available!",
+        description=(
+            "⏱️ The queue updates every 1 minute.\n"
+            "Use `/leave` if you wish to be removed from the waitlist or queue."
+        ),
+        colour=0xdc5078,
+        timestamp=datetime.now()
+    )
 
-    embed.add_field(name="__Queue:__",
-            value=f"{queue_display}",
-            inline=False)
-    embed.add_field(name="Active Testers:",
-            value=f"{testers_display}",
-            inline=False)
+    embed.add_field(
+        name="__Queue:__",
+        value=f"{queue_display}",   # ← f-string
+        inline=False
+    )
+
+    embed.add_field(
+        name="Active Testers:",
+        value=f"{testers_display}", # ← f-string
+        inline=False
+    )
     else:
         color = discord.Color(15880807)
         title = "No Testers Online"
