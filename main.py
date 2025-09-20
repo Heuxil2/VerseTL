@@ -278,10 +278,11 @@ def _ensure_guild_user_info(guild_id: int):
         user_info[guild_id] = {}
 
 def format_datetime_custom(dt: datetime.datetime) -> str:
-    """Format datetime to 'September 20, 2025 12:13 PM' format"""
+    """Format datetime to Discord timestamp format <t:timestamp:R>"""
     if dt is None:
         return "Never"
-    return dt.strftime("%B %d, %Y %I:%M %p")
+    timestamp_unix = int(dt.timestamp())
+    return f"<t:{timestamp_unix}:R>"
 
 # ====== Export web vanilla.json ======
 VANILLA_CACHE = {
@@ -1303,7 +1304,7 @@ async def on_interaction(interaction: discord.Interaction):
             if _is_request_channel(interaction.channel):
                 if discord.utils.get(interaction.user.roles, name="Tierlist Restricted"):
                     embed = discord.Embed(
-                        title="Access Denied",
+                        title="⛔ Access Denied",
                         description="You are currently restricted from entering the queue.",
                         color=discord.Color(15880807)
                     )
@@ -1318,7 +1319,7 @@ async def on_interaction(interaction: discord.Interaction):
                 if interaction.channel.name.lower() == f"waitlist-{region}":
                     if discord.utils.get(interaction.user.roles, name="Tierlist Restricted"):
                         embed = discord.Embed(
-                            title="Access Denied",
+                            title="⛔ Access Denied",
                             description="You are currently restricted from joining the queue.",
                             color=discord.Color(15880807)
                         )
@@ -2689,7 +2690,7 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
             f"No testers for your region are available at this time.\n"
             f"You will be pinged when a tester is available.\n"
             f"Check back later!\n\n"
-            f"Last Test At: <t:{timestamp}:R>"
+            f"Last Test At: {timestamp}"
         ),
         color=discord.Color(15880807)
     )
