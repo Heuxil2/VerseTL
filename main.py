@@ -2479,47 +2479,28 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
     
     timestamp = format_datetime_custom(region_last_active)
 
-if region in guild_queue and tester_ids:
-    embed = discord.Embed(
-        title="Tester(s) Available!",
-        description=(
-            "⏱️ The queue updates every 1 minute.\n"
-            "Use `/leave` if you wish to be removed from the waitlist or queue."
-        ),
-        colour=0xdc5078,
-        timestamp=datetime.now()
-    )
-
-    embed.add_field(
-        name="__Queue:__",
-        value=f"{queue_display}",
-        inline=False
-    )
-
-    embed.add_field(
-        name="Active Testers:",
-        value=f"{testers_display}",
-        inline=False
-    )
-
-    show_button = True
-    ping_content = "@here"
-
-else:
-    embed = discord.Embed(
-        title="No Testers Online",
-        description=(
+    if region in guild_queue and tester_ids:
+        color = discord.Color.from_rgb(220, 80, 120)
+        title = "Tester(s) Available!"
+        description = (
+            f"⏱️ The queue updates every 1 minute.\n"
+            f"Use ``/leave`` if you wish to be removed from the waitlist or queue.\n\n"
+            f"**__Queue:__**\n{queue_display}\n\n"
+            f"**Active Testers:**\n{testers_display}"
+        )
+        show_button = True
+        ping_content = "@here"
+    else:
+        color = discord.Color(15880807)
+        title = "No Testers Online"
+        description = (
             f"No testers for your region are available at this time.\n"
             f"You will be pinged when a tester is available.\n"
             f"Check back later!\n\n"
             f"Last Test At: {timestamp}"
-        ),
-        colour=discord.Color(15880807),
-        timestamp=datetime.now()
-    )
-
-    show_button = False
-    ping_content = None
+        )
+        show_button = False
+        ping_content = None
 
     # Créer l'embed UNE SEULE FOIS après le bloc if/else
     embed = discord.Embed(title=title, description=description, color=color)
@@ -2694,12 +2675,16 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
     if not channel:
         return
 
-    region_last_active = last_region_activity.get(guild.id, {}).get(region)
-    if region_last_active:
-        timestamp_unix = int(region_last_active.timestamp())
-        timestamp = f"<t:{timestamp_unix}:R>"
-    else:
-        timestamp = "Never"
+    # Get last activity for this specific channel and region
+    channel_id = channel.id
+    region_last_active = None
+    if guild.id in last_region_activity:
+        if channel_id in last_region_activity[guild.id]:
+            region_last_active = last_region_activity[guild.id][channel_id].get(region)
+        elif 0 in last_region_activity[guild.id]:  # Backward compatibility with default channel
+            region_last_active = last_region_activity[guild.id][0].get(region)
+    
+    timestamp = format_datetime_custom(region_last_active)
 
     embed = discord.Embed(
         title="No Testers Online",
