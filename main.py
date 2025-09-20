@@ -1462,24 +1462,14 @@ async def removecooldown(interaction: discord.Interaction, member: discord.Membe
         except Exception:
             pass
 
-    if had_cooldown:
-        await interaction.response.send_message(
-            embed=discord.Embed(
-                title="Cooldown Removed",
-                description=f"The testing cooldown for {member.mention} has been cleared.",
-                color=discord.Color(15880807)
-            ),
-            ephemeral=True
-        )
-    else:
-        await interaction.response.send_message(
-            embed=discord.Embed(
-                title="Cooldown Removed",
-                description=f"The testing cooldown for {member.mention} has been cleared.",
-                color=discord.Color(15880807)
-            ),
-            ephemeral=True
-        )
+    await interaction.response.send_message(
+        embed=discord.Embed(
+            title="Cooldown Removed",
+            description=f"The testing cooldown for {member.mention} has been cleared.",
+            color=discord.Color(15880807)
+        ),
+        ephemeral=True
+    )
 
 @bot.tree.command(name="remove", description="Remove a user's cooldown")
 @app_commands.describe(member="Member to clear cooldown for")
@@ -1592,6 +1582,7 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
         active_testers[interaction.guild.id][region].append(interaction.user.id)
 
     waitlist_channel = discord.utils.get(interaction.guild.text_channels, name=f"waitlist-{region}")
+    queue_status = f" Cleared {cleared_count} users from queue." if cleared_count > 0 else ""
 
     await interaction.response.send_message(
         embed=discord.Embed(
@@ -2090,6 +2081,7 @@ async def passeval(interaction: discord.Interaction):
             user=player,
             ign=ign,
             region=region,
+            gamemode="Crystal",
             current_rank=previous_tier,  # Use detected tier role
             earned_rank="LT3",
             tester=interaction.user
@@ -2368,7 +2360,7 @@ class WaitlistModal(discord.ui.Modal):
             "region": region_input.upper(),
             "updated_at": datetime.datetime.now().isoformat()
         }
-        save_user_info()
+        save_user_info()  # SAUVEGARDE IMMÉDIATE
 
         waitlist_role = discord.utils.get(
             interaction.guild.roles,
@@ -2742,7 +2734,8 @@ async def cleanup_expired_cooldowns():
 @tasks.loop(minutes=30)
 async def periodic_save_activities():
     save_last_region_activity()
-    print("DEBUG: Periodic save of last region activities completed")
+    save_user_info()  # SAUVEGARDE PÉRIODIQUE DES FORMULAIRES
+    print("DEBUG: Periodic save of last region activities and user_info completed")
 
 # === RUN BOT ===
 
