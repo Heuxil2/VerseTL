@@ -7,9 +7,6 @@ from io import BytesIO
 import datetime
 import time
 import random
-import traceback
-import tempfile
-import shutil
 
 # Discord
 import discord
@@ -47,12 +44,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if not BASE_DIR or BASE_DIR == "/":
     BASE_DIR = r"C:\Users\Frede\Downloads\VerseTL"
 
-# Ensure base directory exists
-os.makedirs(BASE_DIR, exist_ok=True)
-
-print(f"ULTRA DEBUG: BASE_DIR = {BASE_DIR}")
-print(f"ULTRA DEBUG: BASE_DIR exists: {os.path.exists(BASE_DIR)}")
-print(f"ULTRA DEBUG: BASE_DIR is writable: {os.access(BASE_DIR, os.W_OK)}")
+print(f"FORCE DEBUG: BASE_DIR = {BASE_DIR}")
 
 AUTHORIZED_FILE = os.path.join(BASE_DIR, "authorized_guilds.json")
 STATS_FILE = os.path.join(BASE_DIR, "tester_stats.json")
@@ -60,11 +52,9 @@ USER_INFO_FILE = os.path.join(BASE_DIR, "user_info.json")
 COOLDOWNS_FILE = os.path.join(BASE_DIR, "user_cooldowns.json")
 LAST_ACTIVITY_FILE = os.path.join(BASE_DIR, "last_region_activity.json")
 
-print(f"ULTRA DEBUG: Files will be saved to:")
+print(f"FORCE DEBUG: Files will be saved to:")
 print(f"  - USER_INFO_FILE: {USER_INFO_FILE}")
 print(f"  - LAST_ACTIVITY_FILE: {LAST_ACTIVITY_FILE}")
-print(f"  - STATS_FILE: {STATS_FILE}")
-print(f"  - COOLDOWNS_FILE: {COOLDOWNS_FILE}")
 
 authorized_guilds = set()
 APP_CHECK_ADDED = False  # pour n'ajouter le check global qu'une seule fois
@@ -235,28 +225,28 @@ async def build_tiers(bot: commands.Bot) -> dict:
 def load_authorized_guilds():
     global authorized_guilds
     try:
-        print(f"ULTRA DEBUG: Loading authorized guilds from {AUTHORIZED_FILE}")
+        print(f"FORCE DEBUG: Loading authorized guilds from {AUTHORIZED_FILE}")
         if os.path.exists(AUTHORIZED_FILE):
             with open(AUTHORIZED_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 authorized_guilds = set(data.get("guild_ids", []))
-                print(f"ULTRA DEBUG: Loaded {len(authorized_guilds)} authorized guild(s)")
+                print(f"FORCE DEBUG: Loaded {len(authorized_guilds)} authorized guild(s)")
         else:
             authorized_guilds = set()
-            print(f"ULTRA DEBUG: No authorized_guilds file found at {AUTHORIZED_FILE}, starting empty")
+            print(f"FORCE DEBUG: No authorized_guilds file found at {AUTHORIZED_FILE}, starting empty")
     except Exception as e:
-        print(f"ULTRA ERROR: Error loading authorized guilds: {e}")
+        print(f"FORCE ERROR: Error loading authorized guilds: {e}")
         authorized_guilds = set()
 
 def save_authorized_guilds():
     try:
-        print(f"ULTRA DEBUG: Saving authorized guilds to {AUTHORIZED_FILE}")
+        print(f"FORCE DEBUG: Saving authorized guilds to {AUTHORIZED_FILE}")
         os.makedirs(os.path.dirname(AUTHORIZED_FILE), exist_ok=True)
         with open(AUTHORIZED_FILE, "w", encoding="utf-8") as f:
             json.dump({"guild_ids": list(authorized_guilds)}, f, indent=2)
-        print(f"ULTRA DEBUG: Successfully saved {len(authorized_guilds)} authorized guild(s)")
+        print(f"FORCE DEBUG: Successfully saved {len(authorized_guilds)} authorized guild(s)")
     except Exception as e:
-        print(f"ULTRA ERROR: Error saving authorized guilds: {e}")
+        print(f"FORCE ERROR: Error saving authorized guilds: {e}")
 
 def is_guild_authorized(guild_id):
     if guild_id is None:
@@ -328,14 +318,14 @@ async def rebuild_and_cache_vanilla():
         **built,
     }
     total = sum(len(v) for v in built["tiers"].values())
-    print(f"ULTRA DEBUG: Rebuilt vanilla cache with {total} users")
+    print(f"FORCE DEBUG: Rebuilt vanilla cache with {total} users")
 
 @tasks.loop(minutes=10)
 async def refresh_vanilla_export():
     try:
         await rebuild_and_cache_vanilla()
     except Exception as e:
-        print(f"ULTRA DEBUG: refresh_vanilla_export failed: {e}")
+        print(f"FORCE DEBUG: refresh_vanilla_export failed: {e}")
 
 def _vanilla_payload():
     return VANILLA_CACHE
@@ -443,7 +433,7 @@ def apply_cooldown(user_id: int, member: discord.Member):
     user_test_cooldowns[user_id] = cooldown_end
     save_user_cooldowns()
     role_type = "VT • Server Booster" if has_booster_role(member) else "Regular"
-    print(f"ULTRA DEBUG: Applied {cooldown_days}-day cooldown for {role_type} user {member.name} (ID: {user_id}) until {cooldown_end}")
+    print(f"FORCE DEBUG: Applied {cooldown_days}-day cooldown for {role_type} user {member.name} (ID: {user_id}) until {cooldown_end}")
     return cooldown_days
 
 def has_tester_role(member: discord.Member) -> bool:
@@ -496,489 +486,314 @@ def is_tier_role_obj(role: discord.Role) -> bool:
 
 # ====== FONCTIONS DE SAUVEGARDE ULTRA-RENFORCÉES ======
 
-def ULTRA_safe_write_json(file_path: str, data: dict, description: str):
-    """Ultra-safe JSON writing with atomic operations and multiple fallbacks"""
-    max_attempts = 5
-    
-    for attempt in range(max_attempts):
-        try:
-            print(f"ULTRA DEBUG: Attempt {attempt + 1}/{max_attempts} to save {description}")
-            
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            
-            # Method 1: Atomic write using temporary file
-            try:
-                temp_file = file_path + f".tmp_{int(time.time())}_{attempt}"
-                with open(temp_file, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
-                    f.flush()
-                    os.fsync(f.fileno())  # Force write to disk
-                
-                # Verify temp file was written correctly
-                with open(temp_file, 'r', encoding='utf-8') as f:
-                    test_load = json.load(f)
-                
-                # If we get here, temp file is valid - move it atomically
-                if os.path.exists(file_path):
-                    backup_file = file_path + f".backup_{int(time.time())}"
-                    shutil.copy2(file_path, backup_file)
-                    print(f"ULTRA DEBUG: Created backup: {backup_file}")
-                
-                shutil.move(temp_file, file_path)
-                
-                # Final verification
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    final_verify = json.load(f)
-                
-                file_size = os.path.getsize(file_path)
-                print(f"ULTRA SUCCESS: {description} saved successfully!")
-                print(f"  - File: {file_path}")
-                print(f"  - Size: {file_size} bytes")
-                print(f"  - Attempt: {attempt + 1}/{max_attempts}")
-                return True
-                
-            except Exception as atomic_error:
-                print(f"ULTRA DEBUG: Atomic write failed on attempt {attempt + 1}: {atomic_error}")
-                # Clean up temp file if it exists
-                if 'temp_file' in locals() and os.path.exists(temp_file):
-                    try:
-                        os.remove(temp_file)
-                    except:
-                        pass
-                        
-        except Exception as e:
-            print(f"ULTRA ERROR: Attempt {attempt + 1} failed for {description}: {e}")
-            traceback.print_exc()
-            
-            if attempt < max_attempts - 1:
-                wait_time = (attempt + 1) * 0.5
-                print(f"ULTRA DEBUG: Waiting {wait_time}s before retry...")
-                time.sleep(wait_time)
-    
-    print(f"ULTRA CRITICAL ERROR: All {max_attempts} attempts failed for {description}")
-    return False
-
-def ULTRA_safe_load_json(file_path: str, description: str, default_value=None):
-    """Ultra-safe JSON loading with backup fallbacks"""
-    if default_value is None:
-        default_value = {}
-    
+def FORCE_save_tester_stats():
+    """SAUVEGARDE FORCÉE DES STATS TESTERS"""
     try:
-        print(f"ULTRA DEBUG: Loading {description} from {file_path}")
-        
-        if not os.path.exists(file_path):
-            print(f"ULTRA DEBUG: File {file_path} does not exist, using default")
-            return default_value
-        
-        file_size = os.path.getsize(file_path)
-        print(f"ULTRA DEBUG: File size: {file_size} bytes")
-        
-        # Try to load main file
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            print(f"ULTRA SUCCESS: Loaded {description} successfully")
-            return data
-        except Exception as main_error:
-            print(f"ULTRA ERROR: Failed to load main file: {main_error}")
-            
-            # Look for backup files
-            dir_name = os.path.dirname(file_path)
-            base_name = os.path.basename(file_path)
-            backup_pattern = base_name + ".backup_"
-            
-            backup_files = []
-            if os.path.exists(dir_name):
-                for f in os.listdir(dir_name):
-                    if f.startswith(backup_pattern):
-                        backup_files.append(os.path.join(dir_name, f))
-            
-            # Sort backups by timestamp (newest first)
-            backup_files.sort(reverse=True)
-            
-            for backup_file in backup_files[:3]:  # Try up to 3 most recent backups
-                try:
-                    print(f"ULTRA DEBUG: Trying backup file: {backup_file}")
-                    with open(backup_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    print(f"ULTRA SUCCESS: Loaded {description} from backup: {backup_file}")
-                    
-                    # Restore the working file from backup
-                    shutil.copy2(backup_file, file_path)
-                    print(f"ULTRA DEBUG: Restored main file from backup")
-                    
-                    return data
-                except Exception as backup_error:
-                    print(f"ULTRA DEBUG: Backup {backup_file} also failed: {backup_error}")
-            
-            print(f"ULTRA ERROR: All backup attempts failed for {description}")
-            
-    except Exception as e:
-        print(f"ULTRA ERROR: Critical error loading {description}: {e}")
-        traceback.print_exc()
-    
-    print(f"ULTRA DEBUG: Returning default value for {description}")
-    return default_value
-
-def ULTRA_save_tester_stats():
-    """SAUVEGARDE ULTRA-SÉCURISÉE DES STATS TESTERS"""
-    try:
-        print(f"ULTRA DEBUG: *** SAVING TESTER STATS ***")
+        print(f"FORCE DEBUG: *** SAVING TESTER STATS TO {STATS_FILE} ***")
+        os.makedirs(os.path.dirname(STATS_FILE), exist_ok=True)
         
         # Conversion en format sérialisable
         serializable_stats = {str(user_id): count for user_id, count in tester_stats.items()}
         
-        save_data = {
-            "saved_at": datetime.datetime.now().isoformat(),
-            "version": "ultra_v1",
-            "data": serializable_stats
-        }
+        with open(STATS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(serializable_stats, f, indent=2, ensure_ascii=False)
         
-        success = ULTRA_safe_write_json(STATS_FILE, save_data, "tester stats")
-        
-        if success:
-            print(f"ULTRA SUCCESS: Tester stats saved - {len(serializable_stats)} entries")
+        # Vérification immédiate
+        if os.path.exists(STATS_FILE):
+            print(f"FORCE SUCCESS: Tester stats saved successfully! File size: {os.path.getsize(STATS_FILE)} bytes")
         else:
-            print(f"ULTRA CRITICAL: Failed to save tester stats after all attempts!")
+            print(f"FORCE ERROR: File {STATS_FILE} does not exist after save!")
             
     except Exception as e:
-        print(f"ULTRA CRITICAL ERROR: Exception in ULTRA_save_tester_stats: {e}")
+        print(f"FORCE ERROR: Failed to save tester stats: {e}")
+        import traceback
         traceback.print_exc()
 
-def ULTRA_load_tester_stats():
-    """CHARGEMENT ULTRA-SÉCURISÉ DES STATS TESTERS"""
+def FORCE_load_tester_stats():
+    """CHARGEMENT FORCÉ DES STATS TESTERS"""
     global tester_stats
     try:
-        print(f"ULTRA DEBUG: *** LOADING TESTER STATS ***")
-        
-        loaded = ULTRA_safe_load_json(STATS_FILE, "tester stats", {})
-        
-        # Support for both old and new formats
-        if "data" in loaded:
-            stats_data = loaded["data"]
-            saved_at = loaded.get("saved_at", "unknown")
-            print(f"ULTRA DEBUG: Loading stats saved at {saved_at}")
+        print(f"FORCE DEBUG: *** LOADING TESTER STATS FROM {STATS_FILE} ***")
+        if os.path.exists(STATS_FILE):
+            with open(STATS_FILE, 'r', encoding='utf-8') as f:
+                loaded_stats = json.load(f)
+            tester_stats = {int(user_id): count for user_id, count in loaded_stats.items()}
+            print(f"FORCE SUCCESS: Loaded {len(tester_stats)} tester stats")
+            for user_id, count in list(tester_stats.items())[:5]:  # Show first 5
+                print(f"  - User {user_id}: {count} tests")
         else:
-            # Old format compatibility
-            stats_data = loaded
-        
-        tester_stats = {}
-        for user_id_str, count in stats_data.items():
-            try:
-                user_id = int(user_id_str)
-                tester_stats[user_id] = int(count)
-            except (ValueError, TypeError) as e:
-                print(f"ULTRA ERROR: Failed to parse tester stat {user_id_str}: {e}")
-        
-        print(f"ULTRA SUCCESS: Loaded {len(tester_stats)} tester stats")
-        
-        # Show first few entries for verification
-        for i, (user_id, count) in enumerate(list(tester_stats.items())[:5]):
-            print(f"  - User {user_id}: {count} tests")
-            
+            print(f"FORCE DEBUG: No tester stats file found at {STATS_FILE}")
+            tester_stats = {}
     except Exception as e:
-        print(f"ULTRA ERROR: Error in ULTRA_load_tester_stats: {e}")
-        traceback.print_exc()
+        print(f"FORCE ERROR: Error loading tester stats: {e}")
         tester_stats = {}
 
-def ULTRA_save_user_cooldowns():
-    """SAUVEGARDE ULTRA-SÉCURISÉE DES COOLDOWNS"""
+def FORCE_save_user_cooldowns():
+    """SAUVEGARDE FORCÉE DES COOLDOWNS"""
     try:
-        print(f"ULTRA DEBUG: *** SAVING USER COOLDOWNS ***")
+        print(f"FORCE DEBUG: *** SAVING USER COOLDOWNS TO {COOLDOWNS_FILE} ***")
+        os.makedirs(os.path.dirname(COOLDOWNS_FILE), exist_ok=True)
         
         cooldowns_data = {}
-        current_time = datetime.datetime.now()
-        
         for user_id, cooldown_time in user_test_cooldowns.items():
-            if cooldown_time > current_time:  # Only save active cooldowns
-                cooldowns_data[str(user_id)] = cooldown_time.isoformat()
+            cooldowns_data[str(user_id)] = cooldown_time.isoformat()
+            
+        with open(COOLDOWNS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(cooldowns_data, f, indent=2, ensure_ascii=False)
         
-        save_data = {
-            "saved_at": datetime.datetime.now().isoformat(),
-            "version": "ultra_v1",
-            "data": cooldowns_data
-        }
-        
-        success = ULTRA_safe_write_json(COOLDOWNS_FILE, save_data, "user cooldowns")
-        
-        if success:
-            print(f"ULTRA SUCCESS: User cooldowns saved - {len(cooldowns_data)} active cooldowns")
+        # Vérification immédiate
+        if os.path.exists(COOLDOWNS_FILE):
+            print(f"FORCE SUCCESS: User cooldowns saved! File size: {os.path.getsize(COOLDOWNS_FILE)} bytes")
         else:
-            print(f"ULTRA CRITICAL: Failed to save user cooldowns after all attempts!")
+            print(f"FORCE ERROR: File {COOLDOWNS_FILE} does not exist after save!")
             
     except Exception as e:
-        print(f"ULTRA CRITICAL ERROR: Exception in ULTRA_save_user_cooldowns: {e}")
+        print(f"FORCE ERROR: Failed to save user cooldowns: {e}")
+        import traceback
         traceback.print_exc()
 
-def ULTRA_load_user_cooldowns():
-    """CHARGEMENT ULTRA-SÉCURISÉ DES COOLDOWNS"""
+def FORCE_load_user_cooldowns():
+    """CHARGEMENT FORCÉ DES COOLDOWNS"""
     global user_test_cooldowns
     try:
-        print(f"ULTRA DEBUG: *** LOADING USER COOLDOWNS ***")
-        
-        loaded = ULTRA_safe_load_json(COOLDOWNS_FILE, "user cooldowns", {})
-        
-        # Support for both old and new formats
-        if "data" in loaded:
-            cooldowns_data = loaded["data"]
-            saved_at = loaded.get("saved_at", "unknown")
-            print(f"ULTRA DEBUG: Loading cooldowns saved at {saved_at}")
+        print(f"FORCE DEBUG: *** LOADING USER COOLDOWNS FROM {COOLDOWNS_FILE} ***")
+        if os.path.exists(COOLDOWNS_FILE):
+            with open(COOLDOWNS_FILE, 'r', encoding='utf-8') as f:
+                loaded_cooldowns = json.load(f)
+            user_test_cooldowns = {}
+            current_time = datetime.datetime.now()
+            
+            for user_id_str, cooldown_str in loaded_cooldowns.items():
+                try:
+                    user_id = int(user_id_str)
+                    cooldown_time = datetime.datetime.fromisoformat(cooldown_str)
+                    if cooldown_time > current_time:
+                        user_test_cooldowns[user_id] = cooldown_time
+                        time_remaining = cooldown_time - current_time
+                        print(f"FORCE DEBUG: Loaded cooldown for user {user_id}: {time_remaining.days}d {time_remaining.seconds//3600}h remaining")
+                except Exception as e:
+                    print(f"FORCE ERROR: Failed to parse cooldown for user {user_id_str}: {e}")
+            
+            print(f"FORCE SUCCESS: Loaded {len(user_test_cooldowns)} active cooldowns")
         else:
-            # Old format compatibility
-            cooldowns_data = loaded
-        
-        user_test_cooldowns = {}
-        current_time = datetime.datetime.now()
-        
-        for user_id_str, cooldown_str in cooldowns_data.items():
-            try:
-                user_id = int(user_id_str)
-                cooldown_time = datetime.datetime.fromisoformat(cooldown_str)
-                
-                if cooldown_time > current_time:
-                    user_test_cooldowns[user_id] = cooldown_time
-                    time_remaining = cooldown_time - current_time
-                    print(f"ULTRA DEBUG: Active cooldown for user {user_id}: {time_remaining.days}d {time_remaining.seconds//3600}h remaining")
-                    
-            except Exception as e:
-                print(f"ULTRA ERROR: Failed to parse cooldown for user {user_id_str}: {e}")
-        
-        print(f"ULTRA SUCCESS: Loaded {len(user_test_cooldowns)} active cooldowns")
-        
+            print(f"FORCE DEBUG: No cooldowns file found at {COOLDOWNS_FILE}")
+            user_test_cooldowns = {}
     except Exception as e:
-        print(f"ULTRA ERROR: Error in ULTRA_load_user_cooldowns: {e}")
-        traceback.print_exc()
+        print(f"FORCE ERROR: Error loading user cooldowns: {e}")
         user_test_cooldowns = {}
 
-def ULTRA_save_user_info():
-    """SAUVEGARDE ULTRA-CRITIQUE DES INFORMATIONS UTILISATEUR"""
+def FORCE_save_user_info():
+    """SAUVEGARDE FORCÉE DES INFORMATIONS UTILISATEUR - LA PLUS CRITIQUE !"""
     try:
-        print(f"ULTRA DEBUG: *** SAVING USER INFO - CRITICAL DATA ***")
-        print(f"ULTRA DEBUG: Current user_info contains {len(user_info)} guilds")
-        
-        total_users = 0
+        print(f"FORCE DEBUG: *** SAVING USER INFO TO {USER_INFO_FILE} ***")
+        print(f"FORCE DEBUG: Current user_info contains {len(user_info)} guilds")
         for guild_id, guild_data in user_info.items():
-            guild_user_count = len(guild_data)
-            total_users += guild_user_count
-            print(f"  - Guild {guild_id}: {guild_user_count} users")
-            
-            # Log some sample user data for verification
-            for i, (user_id, data) in enumerate(list(guild_data.items())[:3]):
-                print(f"    * User {user_id}: {data}")
+            print(f"  - Guild {guild_id}: {len(guild_data)} users")
         
-        # Convert to serializable format
+        # Créer le dossier si nécessaire
+        os.makedirs(os.path.dirname(USER_INFO_FILE), exist_ok=True)
+        
+        # Convertir en format sérialisable
         serializable = {}
         for guild_id, guild_data in user_info.items():
             serializable[str(guild_id)] = {}
             for uid, data in guild_data.items():
                 serializable[str(guild_id)][str(uid)] = data
-        
-        # Create timestamped save data
+                
+        # Sauvegarder avec timestamp
         save_data = {
             "saved_at": datetime.datetime.now().isoformat(),
-            "version": "ultra_v1",
-            "total_users": total_users,
-            "guild_count": len(user_info),
             "data": serializable
         }
         
-        success = ULTRA_safe_write_json(USER_INFO_FILE, save_data, "user info")
+        with open(USER_INFO_FILE, "w", encoding="utf-8") as f:
+            json.dump(save_data, f, indent=2, ensure_ascii=False)
         
-        if success:
-            print(f"ULTRA SUCCESS: User info saved - {total_users} users across {len(user_info)} guilds")
+        # Vérification immédiate
+        if os.path.exists(USER_INFO_FILE):
+            file_size = os.path.getsize(USER_INFO_FILE)
+            print(f"FORCE SUCCESS: User info saved successfully! File size: {file_size} bytes")
+            
+            # Test de re-lecture immédiate
+            with open(USER_INFO_FILE, "r", encoding="utf-8") as f:
+                test_load = json.load(f)
+            total_users = sum(len(guild_data) for guild_data in test_load.get("data", {}).values())
+            print(f"FORCE VERIFY: File contains {total_users} users total")
         else:
-            print(f"ULTRA CRITICAL: Failed to save user info after all attempts!")
+            print(f"FORCE ERROR: File {USER_INFO_FILE} does not exist after save!")
             
     except Exception as e:
-        print(f"ULTRA CRITICAL ERROR: Exception in ULTRA_save_user_info: {e}")
+        print(f"FORCE ERROR: Failed to save user info: {e}")
+        import traceback
         traceback.print_exc()
 
-def ULTRA_load_user_info():
-    """CHARGEMENT ULTRA-CRITIQUE DES INFORMATIONS UTILISATEUR"""
+def FORCE_load_user_info():
+    """CHARGEMENT FORCÉ DES INFORMATIONS UTILISATEUR"""
     global user_info
     try:
-        print(f"ULTRA DEBUG: *** LOADING USER INFO - CRITICAL DATA ***")
-        
-        loaded = ULTRA_safe_load_json(USER_INFO_FILE, "user info", {})
-        
+        print(f"FORCE DEBUG: *** LOADING USER INFO FROM {USER_INFO_FILE} ***")
         user_info = {}  # Reset
         
-        # Support for both old and new formats
-        if "data" in loaded:
-            data_section = loaded["data"]
-            saved_at = loaded.get("saved_at", "unknown")
-            expected_total = loaded.get("total_users", "unknown")
-            expected_guilds = loaded.get("guild_count", "unknown")
-            print(f"ULTRA DEBUG: Loading user info saved at {saved_at}")
-            print(f"ULTRA DEBUG: Expected: {expected_total} users in {expected_guilds} guilds")
-        else:
-            # Old format direct compatibility
-            data_section = loaded
-        
-        loaded_users = 0
-        for guild_id_str, guild_data in data_section.items():
-            try:
-                guild_id = int(guild_id_str)
-                user_info[guild_id] = {}
-                
-                for uid_str, data in guild_data.items():
-                    try:
-                        uid = int(uid_str)
-                        user_info[guild_id][uid] = data
-                        loaded_users += 1
-                        
-                        # Log first few users for verification
-                        if loaded_users <= 5:
-                            print(f"ULTRA DEBUG: Loaded user {uid} in guild {guild_id}: {data}")
-                            
-                    except Exception as e:
-                        print(f"ULTRA ERROR: Failed to parse user {uid_str} in guild {guild_id}: {e}")
-                
-                print(f"ULTRA SUCCESS: Guild {guild_id} loaded with {len(user_info[guild_id])} users")
-                
-            except Exception as e:
-                print(f"ULTRA ERROR: Failed to parse guild {guild_id_str}: {e}")
-        
-        print(f"ULTRA SUCCESS: Loaded {loaded_users} user_info entries across {len(user_info)} guilds")
-        
-        # Verification
-        if loaded_users == 0 and loaded:
-            print(f"ULTRA WARNING: Loaded data structure but no users found - possible format issue")
-            print(f"ULTRA DEBUG: Raw loaded keys: {list(loaded.keys())}")
+        if os.path.exists(USER_INFO_FILE):
+            file_size = os.path.getsize(USER_INFO_FILE)
+            print(f"FORCE DEBUG: Found file with size {file_size} bytes")
             
+            with open(USER_INFO_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            
+            # Support pour les anciens et nouveaux formats
+            if "data" in raw:
+                # Nouveau format avec timestamp
+                data_section = raw["data"]
+                saved_at = raw.get("saved_at", "unknown")
+                print(f"FORCE DEBUG: Loading data saved at {saved_at}")
+            else:
+                # Ancien format direct
+                data_section = raw
+            
+            for guild_id_str, guild_data in data_section.items():
+                try:
+                    guild_id = int(guild_id_str)
+                    user_info[guild_id] = {}
+                    for uid_str, data in guild_data.items():
+                        try:
+                            uid = int(uid_str)
+                            user_info[guild_id][uid] = data
+                            print(f"FORCE DEBUG: Loaded user {uid} -> {data}")
+                        except Exception as e:
+                            print(f"FORCE ERROR: Failed to parse user {uid_str}: {e}")
+                    print(f"FORCE SUCCESS: Guild {guild_id} loaded with {len(user_info[guild_id])} users")
+                except Exception as e:
+                    print(f"FORCE ERROR: Failed to parse guild {guild_id_str}: {e}")
+            
+            total_users = sum(len(guild_data) for guild_data in user_info.values())
+            print(f"FORCE SUCCESS: Loaded {total_users} user_info entries across {len(user_info)} guilds")
+        else:
+            print(f"FORCE DEBUG: No user_info file found at {USER_INFO_FILE}")
     except Exception as e:
-        print(f"ULTRA ERROR: Error in ULTRA_load_user_info: {e}")
+        print(f"FORCE ERROR: Error loading user_info: {e}")
+        import traceback
         traceback.print_exc()
         user_info = {}
 
-def ULTRA_save_last_region_activity():
-    """SAUVEGARDE ULTRA-CRITIQUE DES ACTIVITÉS DE RÉGION"""
+def FORCE_save_last_region_activity():
+    """SAUVEGARDE FORCÉE DES ACTIVITÉS DE RÉGION"""
     try:
-        print(f"ULTRA DEBUG: *** SAVING LAST REGION ACTIVITY ***")
-        print(f"ULTRA DEBUG: Current activity data contains {len(last_region_activity)} guilds")
+        print(f"FORCE DEBUG: *** SAVING LAST REGION ACTIVITY TO {LAST_ACTIVITY_FILE} ***")
+        print(f"FORCE DEBUG: Current activity data contains {len(last_region_activity)} guilds")
         
-        # Convert to serializable format
-        serializable_data = {}
-        total_activities = 0
+        os.makedirs(os.path.dirname(LAST_ACTIVITY_FILE), exist_ok=True)
         
-        for gid, channels in last_region_activity.items():
-            serializable_data[str(gid)] = {}
-            for channel_id, regions in channels.items():
-                serializable_data[str(gid)][str(channel_id)] = {}
-                for region, last_time in regions.items():
-                    if last_time is not None:
-                        serializable_data[str(gid)][str(channel_id)][region] = last_time.isoformat()
-                        total_activities += 1
-                        print(f"ULTRA DEBUG: Guild {gid} Channel {channel_id} {region.upper()}: {last_time}")
-                    else:
-                        serializable_data[str(gid)][str(channel_id)][region] = None
-        
-        save_data = {
+        data = {
             "saved_at": datetime.datetime.now().isoformat(),
-            "version": "ultra_v1",
-            "total_activities": total_activities,
-            "guild_count": len(last_region_activity),
-            "data": serializable_data
+            "data": {}
         }
         
-        success = ULTRA_safe_write_json(LAST_ACTIVITY_FILE, save_data, "last region activity")
+        for gid, channels in last_region_activity.items():
+            data["data"][str(gid)] = {}
+            for channel_id, regions in channels.items():
+                data["data"][str(gid)][str(channel_id)] = {}
+                for region, last_time in regions.items():
+                    data["data"][str(gid)][str(channel_id)][region] = last_time.isoformat() if last_time is not None else None
+                    
+        with open(LAST_ACTIVITY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
         
-        if success:
-            print(f"ULTRA SUCCESS: Last region activity saved - {total_activities} timestamps across {len(last_region_activity)} guilds")
+        # Vérification immédiate
+        if os.path.exists(LAST_ACTIVITY_FILE):
+            print(f"FORCE SUCCESS: Last region activity saved! File size: {os.path.getsize(LAST_ACTIVITY_FILE)} bytes")
         else:
-            print(f"ULTRA CRITICAL: Failed to save last region activity after all attempts!")
+            print(f"FORCE ERROR: File {LAST_ACTIVITY_FILE} does not exist after save!")
             
     except Exception as e:
-        print(f"ULTRA CRITICAL ERROR: Exception in ULTRA_save_last_region_activity: {e}")
+        print(f"FORCE ERROR: Failed to save last region activity: {e}")
+        import traceback
         traceback.print_exc()
 
-def ULTRA_load_last_region_activity():
-    """CHARGEMENT ULTRA-CRITIQUE DES ACTIVITÉS DE RÉGION"""
+def FORCE_load_last_region_activity():
+    """CHARGEMENT FORCÉ DES ACTIVITÉS DE RÉGION"""
     global last_region_activity
     try:
-        print(f"ULTRA DEBUG: *** LOADING LAST REGION ACTIVITY ***")
-        
-        loaded = ULTRA_safe_load_json(LAST_ACTIVITY_FILE, "last region activity", {})
-        
+        print(f"FORCE DEBUG: *** LOADING LAST REGION ACTIVITY FROM {LAST_ACTIVITY_FILE} ***")
         last_region_activity = {}  # Reset
         
-        # Support for both old and new formats
-        if "data" in loaded:
-            data_section = loaded["data"]
-            saved_at = loaded.get("saved_at", "unknown")
-            expected_activities = loaded.get("total_activities", "unknown")
-            expected_guilds = loaded.get("guild_count", "unknown")
-            print(f"ULTRA DEBUG: Loading activity data saved at {saved_at}")
-            print(f"ULTRA DEBUG: Expected: {expected_activities} activities in {expected_guilds} guilds")
-        else:
-            # Old format compatibility
-            data_section = loaded
-        
-        loaded_activities = 0
-        for gid_str, channels in data_section.items():
-            try:
-                gid = int(gid_str)
-                last_region_activity[gid] = {}
-                
-                # Support both new format {channel_id: {region: time}} and old format {region: time}
-                if channels and isinstance(list(channels.values())[0], dict) and any(isinstance(v, dict) for v in channels.values()):
-                    # New format: {guild_id: {channel_id: {region: datetime}}}
-                    for channel_id_str, regions in channels.items():
-                        try:
-                            channel_id = int(channel_id_str)
-                            last_region_activity[gid][channel_id] = {"na": None, "eu": None, "as": None, "au": None}
-                            
-                            for region in ["na", "eu", "as", "au"]:
-                                val = regions.get(region)
-                                if val:
-                                    try:
-                                        parsed_time = datetime.datetime.fromisoformat(val)
-                                        last_region_activity[gid][channel_id][region] = parsed_time
-                                        loaded_activities += 1
-                                        time_ago = datetime.datetime.now() - parsed_time
-                                        print(f"ULTRA DEBUG: Restored activity for guild {gid} channel {channel_id} {region.upper()}: {time_ago.days} days ago")
-                                    except Exception as e:
-                                        print(f"ULTRA ERROR: Failed to parse datetime {val}: {e}")
-                                        
-                        except Exception as e:
-                            print(f"ULTRA ERROR: Failed to parse channel {channel_id_str}: {e}")
-                else:
-                    # Old format: {guild_id: {region: datetime}} - migrate to new format
-                    default_channel_id = 0
-                    last_region_activity[gid][default_channel_id] = {"na": None, "eu": None, "as": None, "au": None}
+        if os.path.exists(LAST_ACTIVITY_FILE):
+            file_size = os.path.getsize(LAST_ACTIVITY_FILE)
+            print(f"FORCE DEBUG: Found file with size {file_size} bytes")
+            
+            with open(LAST_ACTIVITY_FILE, 'r', encoding='utf-8') as f:
+                loaded = json.load(f)
+            
+            # Support pour les anciens et nouveaux formats
+            if "data" in loaded:
+                data_section = loaded["data"]
+                saved_at = loaded.get("saved_at", "unknown")
+                print(f"FORCE DEBUG: Loading activity data saved at {saved_at}")
+            else:
+                data_section = loaded
+            
+            for gid_str, channels in data_section.items():
+                try:
+                    gid = int(gid_str)
+                    last_region_activity[gid] = {}
                     
-                    for region in ["na", "eu", "as", "au"]:
-                        val = channels.get(region)
-                        if val:
+                    # Support old and new formats
+                    if channels and isinstance(list(channels.values())[0], dict) and any(isinstance(v, dict) for v in channels.values()):
+                        # New format: {guild_id: {channel_id: {region: datetime}}}
+                        for channel_id_str, regions in channels.items():
                             try:
-                                parsed_time = datetime.datetime.fromisoformat(val)
-                                last_region_activity[gid][default_channel_id][region] = parsed_time
-                                loaded_activities += 1
-                                time_ago = datetime.datetime.now() - parsed_time
-                                print(f"ULTRA DEBUG: Migrated activity for guild {gid} {region.upper()}: {time_ago.days} days ago")
+                                channel_id = int(channel_id_str)
+                                last_region_activity[gid][channel_id] = {"na": None, "eu": None, "as": None, "au": None}
+                                for region in ["na", "eu", "as", "au"]:
+                                    val = regions.get(region)
+                                    if val:
+                                        try:
+                                            parsed_time = datetime.datetime.fromisoformat(val)
+                                            last_region_activity[gid][channel_id][region] = parsed_time
+                                            time_ago = datetime.datetime.now() - parsed_time
+                                            print(f"FORCE DEBUG: Restored activity for guild {gid} channel {channel_id} {region.upper()}: {time_ago.days} days ago")
+                                        except Exception as e:
+                                            print(f"FORCE ERROR: Failed to parse datetime {val}: {e}")
                             except Exception as e:
-                                print(f"ULTRA ERROR: Failed to parse datetime {val}: {e}")
-                
-            except Exception as e:
-                print(f"ULTRA ERROR: Failed to parse guild {gid_str}: {e}")
-        
-        print(f"ULTRA SUCCESS: Loaded {loaded_activities} last region activities across {len(last_region_activity)} guilds")
-        
+                                print(f"FORCE ERROR: Failed to parse channel {channel_id_str}: {e}")
+                    else:
+                        # Old format compatibility: {guild_id: {region: datetime}}
+                        default_channel_id = 0
+                        last_region_activity[gid][default_channel_id] = {"na": None, "eu": None, "as": None, "au": None}
+                        for region in ["na", "eu", "as", "au"]:
+                            val = channels.get(region)
+                            if val:
+                                try:
+                                    parsed_time = datetime.datetime.fromisoformat(val)
+                                    last_region_activity[gid][default_channel_id][region] = parsed_time
+                                    time_ago = datetime.datetime.now() - parsed_time
+                                    print(f"FORCE DEBUG: Migrated activity for guild {gid} {region.upper()}: {time_ago.days} days ago")
+                                except Exception as e:
+                                    print(f"FORCE ERROR: Failed to parse datetime {val}: {e}")
+                    
+                except Exception as e:
+                    print(f"FORCE ERROR: Failed to parse guild {gid_str}: {e}")
+            
+            total_guilds = len(last_region_activity)
+            total_activities = sum(len(guild_data) for guild_data in last_region_activity.values())
+            print(f"FORCE SUCCESS: Loaded activity data for {total_guilds} guilds with {total_activities} channel entries")
+        else:
+            print(f"FORCE DEBUG: No last activity file found at {LAST_ACTIVITY_FILE}")
     except Exception as e:
-        print(f"ULTRA ERROR: Error in ULTRA_load_last_region_activity: {e}")
+        print(f"FORCE ERROR: Error loading last region activity: {e}")
+        import traceback
         traceback.print_exc()
         last_region_activity = {}
 
-# Create aliases for compatibility
-save_tester_stats = ULTRA_save_tester_stats
-load_tester_stats = ULTRA_load_tester_stats
-save_user_cooldowns = ULTRA_save_user_cooldowns
-load_user_cooldowns = ULTRA_load_user_cooldowns
-save_user_info = ULTRA_save_user_info
-load_user_info = ULTRA_load_user_info
-save_last_region_activity = ULTRA_save_last_region_activity
-load_last_region_activity = ULTRA_load_last_region_activity
+# Aliases pour compatibilité
+save_tester_stats = FORCE_save_tester_stats
+load_tester_stats = FORCE_load_tester_stats
+save_user_cooldowns = FORCE_save_user_cooldowns
+load_user_cooldowns = FORCE_load_user_cooldowns
+save_user_info = FORCE_save_user_info
+load_user_info = FORCE_load_user_info
+save_last_region_activity = FORCE_save_last_region_activity
+load_last_region_activity = FORCE_load_last_region_activity
 
 def get_sheets_service():
     try:
@@ -993,7 +808,7 @@ def get_sheets_service():
             )
             return build('sheets', 'v4', credentials=credentials)
     except Exception as e:
-        print(f"ULTRA DEBUG: Error setting up Google Sheets service: {e}")
+        print(f"FORCE DEBUG: Error setting up Google Sheets service: {e}")
     return None
 
 async def add_ign_to_sheet(ign: str, tier: str):
@@ -1001,12 +816,12 @@ async def add_ign_to_sheet(ign: str, tier: str):
     try:
         service = get_sheets_service()
         if not service:
-            print("ULTRA DEBUG: Google Sheets service not available")
+            print("FORCE DEBUG: Google Sheets service not available")
             return False
 
         column = TIER_COLUMNS.get(tier.upper())
         if not column:
-            print(f"ULTRA DEBUG: Unknown tier: {tier}")
+            print(f"FORCE DEBUG: Unknown tier: {tier}")
             return False
 
         range_name = f"'VerseTL Crystal'!{column}:{column}"
@@ -1028,14 +843,14 @@ async def add_ign_to_sheet(ign: str, tier: str):
             body=body
         ).execute()
 
-        print(f"ULTRA DEBUG: Successfully added {ign} to {tier} column at row {next_row}")
+        print(f"FORCE DEBUG: Successfully added {ign} to {tier} column at row {next_row}")
         return True
 
     except HttpError as e:
-        print(f"ULTRA DEBUG: Google Sheets API error: {e}")
+        print(f"FORCE DEBUG: Google Sheets API error: {e}")
         return False
     except Exception as e:
-        print(f"ULTRA DEBUG: Error adding IGN to sheet: {e}")
+        print(f"FORCE DEBUG: Error adding IGN to sheet: {e}")
         return False
 
 async def update_user_count_channel(guild):
@@ -1119,7 +934,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     if tester_id not in tester_stats:
         tester_stats[tester_id] = 0
     tester_stats[tester_id] += 1
-    ULTRA_save_tester_stats()  # SAUVEGARDE ULTRA-SÉCURISÉE
+    FORCE_save_tester_stats()  # SAUVEGARDE FORCÉE
 
     try:
         await add_ign_to_sheet(ign, earned_rank)
@@ -1153,10 +968,10 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
             channel_id = interaction.channel.id if hasattr(interaction, 'channel') and interaction.channel else 0
             _ensure_guild_activity_state(guild.id, channel_id)
             last_region_activity[guild.id][channel_id][reg] = datetime.datetime.now()
-            ULTRA_save_last_region_activity()  # SAUVEGARDE ULTRA-SÉCURISÉE
-            print(f"ULTRA DEBUG: Updated last test at for guild {guild.id} channel {channel_id} region {reg.upper()}")
+            FORCE_save_last_region_activity()  # SAUVEGARDE FORCÉE
+            print(f"FORCE DEBUG: Updated last test at for guild {guild.id} channel {channel_id} region {reg.upper()}")
     except Exception as e:
-        print(f"ULTRA DEBUG: Failed updating last test at: {e}")
+        print(f"FORCE DEBUG: Failed updating last test at: {e}")
 
     try:
         await rebuild_and_cache_vanilla()
@@ -1247,7 +1062,7 @@ class TierSelectView(discord.ui.View):
                     tester=self.tester
                 )
             except Exception as e:
-                print(f"ULTRA DEBUG: post_tier_results error: {e}")
+                print(f"FORCE DEBUG: post_tier_results error: {e}")
 
         embed = discord.Embed(
             title="Channel Closing",
@@ -1300,7 +1115,7 @@ async def global_app_check(interaction: discord.Interaction) -> bool:
 
 @bot.event
 async def on_ready():
-    print(f"ULTRA DEBUG: *** {bot.user.name} IS ONLINE AND READY! ***")
+    print(f"FORCE DEBUG: *** {bot.user.name} IS ONLINE AND READY! ***")
 
     load_authorized_guilds()
 
@@ -1308,34 +1123,18 @@ async def on_ready():
         if guild.id not in message_logs:
             message_logs[guild.id] = []
 
-    # CHARGEMENT ULTRA-SÉCURISÉ DE TOUTES LES DONNÉES PERSISTANTES
-    print("ULTRA DEBUG: *** LOADING ALL PERSISTENT DATA WITH ULTRA SECURITY ***")
+    # CHARGEMENT FORCÉ DE TOUTES LES DONNÉES PERSISTANTES AVANT TOUT
+    print("FORCE DEBUG: *** LOADING ALL PERSISTENT DATA ***")
+    FORCE_load_tester_stats()
+    FORCE_load_user_cooldowns()
+    FORCE_load_user_info()
+    FORCE_load_last_region_activity()
     
-    # Load in specific order
-    ULTRA_load_tester_stats()
-    ULTRA_load_user_cooldowns()
-    ULTRA_load_user_info()
-    ULTRA_load_last_region_activity()
-    
-    # Verify what was loaded
+    # Debug: Show what was loaded
     total_users_loaded = sum(len(guild_data) for guild_data in user_info.values())
     total_activities_loaded = sum(len(guild_data) for guild_data in last_region_activity.values())
-    total_cooldowns_loaded = len(user_test_cooldowns)
-    total_stats_loaded = len(tester_stats)
-    
-    print(f"ULTRA SUCCESS: *** DATA LOADING COMPLETE ***")
-    print(f"  - USER INFO: {total_users_loaded} entries across {len(user_info)} guilds")
-    print(f"  - ACTIVITIES: {total_activities_loaded} guild activity records")
-    print(f"  - COOLDOWNS: {total_cooldowns_loaded} active cooldowns")
-    print(f"  - TESTER STATS: {total_stats_loaded} tester records")
-
-    # Show some sample data for verification
-    if user_info:
-        print("ULTRA DEBUG: Sample user_info data:")
-        for guild_id, guild_data in list(user_info.items())[:2]:
-            print(f"  Guild {guild_id}: {len(guild_data)} users")
-            for user_id, data in list(guild_data.items())[:2]:
-                print(f"    User {user_id}: {data}")
+    print(f"FORCE SUCCESS: *** LOADED {total_users_loaded} USER_INFO ENTRIES ***")
+    print(f"FORCE SUCCESS: *** LOADED ACTIVITY DATA FOR {total_activities_loaded} GUILDS ***")
 
     for g in bot.guilds:
         _ensure_guild_activity_state(g.id)
@@ -1351,30 +1150,30 @@ async def on_ready():
     waitlist_message_ids.clear()
     waitlist_messages.clear()
     active_testing_sessions.clear()
-    print("ULTRA DEBUG: Cleared queue/tester/waitlist state on startup")
+    print("FORCE DEBUG: Cleared queue/tester/waitlist state on startup")
 
-    # IMPORTANT: Last test at timestamps are preserved from loaded data
-    print("ULTRA SUCCESS: *** Last test at timestamps PRESERVED from saved data ***")
+    # IMPORTANT: NE PAS réinitialiser les "last test at" - ils sont restaurés depuis le fichier
+    print("FORCE SUCCESS: *** Last test at timestamps PRESERVED from saved data ***")
 
     global APP_CHECK_ADDED
     if not APP_CHECK_ADDED:
         try:
             bot.tree.add_check(global_app_check)
             APP_CHECK_ADDED = True
-            print("ULTRA DEBUG: Registered global app command check")
+            print("FORCE DEBUG: Registered global app command check")
         except Exception as e:
-            print(f"ULTRA ERROR: Failed to add global app check: {e}")
+            print(f"FORCE ERROR: Failed to add global app check: {e}")
 
     try:
         synced = await bot.tree.sync()
-        print(f"ULTRA DEBUG: Synced {len(synced)} command(s)")
+        print(f"FORCE DEBUG: Synced {len(synced)} command(s)")
 
         if GUILD_ID:
             guild = discord.Object(id=GUILD_ID)
             synced_guild = await bot.tree.sync(guild=guild)
-            print(f"ULTRA DEBUG: Synced {len(synced_guild)} slash command(s) for guild {GUILD_ID}")
+            print(f"FORCE DEBUG: Synced {len(synced_guild)} slash command(s) for guild {GUILD_ID}")
     except Exception as e:
-        print(f"ULTRA ERROR: Failed to sync commands: {e}")
+        print(f"FORCE ERROR: Failed to sync commands: {e}")
 
     newly_added = 0
     for g in bot.guilds:
@@ -1383,20 +1182,20 @@ async def on_ready():
             newly_added += 1
     if newly_added > 0:
         save_authorized_guilds()
-        print(f"ULTRA DEBUG: Auto-authorized {newly_added} guild(s) on startup")
+        print(f"FORCE DEBUG: Auto-authorized {newly_added} guild(s) on startup")
 
     for guild in bot.guilds:
         if not is_guild_authorized(guild.id):
-            print(f"ULTRA DEBUG: Skipping setup for unauthorized guild {guild.id}")
+            print(f"FORCE DEBUG: Skipping setup for unauthorized guild {guild.id}")
             continue
 
         request_channel = _get_request_channel(guild)
         if not request_channel:
             try:
                 request_channel = await guild.create_text_channel(REQUEST_CHANNEL_NAME)
-                print(f"ULTRA DEBUG: Created request channel #{request_channel.name} in {guild.name}")
+                print(f"FORCE DEBUG: Created request channel #{request_channel.name} in {guild.name}")
             except discord.Forbidden:
-                print(f"ULTRA DEBUG: Missing permission to create request channel in {guild.name}")
+                print(f"FORCE DEBUG: Missing permission to create request channel in {guild.name}")
                 request_channel = None
 
         if request_channel:
@@ -1420,55 +1219,54 @@ async def on_ready():
 
             try:
                 await request_channel.purge(limit=100)
-                print(f"ULTRA DEBUG: Purged all messages in request-test channel")
+                print(f"FORCE DEBUG: Purged all messages in request-test channel")
             except Exception as e:
-                print(f"ULTRA DEBUG: Could not purge request-test channel: {e}")
+                print(f"FORCE DEBUG: Could not purge request-test channel: {e}")
 
             await request_channel.send(embed=embed, view=view)
-            print(f"ULTRA DEBUG: Created single request button in request-test channel")
+            print(f"FORCE DEBUG: Created single request button in request-test channel")
 
         for region in waitlists:
             channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
             if channel:
                 try:
                     await channel.purge(limit=100)
-                    print(f"ULTRA DEBUG: Purged messages in waitlist-{region}")
+                    print(f"FORCE DEBUG: Purged messages in waitlist-{region}")
                 except Exception as e:
-                    print(f"ULTRA DEBUG: Could not purge waitlist-{region}: {e}")
+                    print(f"FORCE DEBUG: Could not purge waitlist-{region}: {e}")
 
                 _ensure_guild_queue_state(guild.id)
                 opened_queues[guild.id].discard(region)
                 await create_initial_waitlist_message(guild, region)
 
-    # Start background tasks
     if not refresh_messages.is_running():
         refresh_messages.start()
-        print("ULTRA DEBUG: Started refresh_messages task")
+        print("FORCE DEBUG: Started refresh_messages task")
 
     if not cleanup_expired_cooldowns.is_running():
         cleanup_expired_cooldowns.start()
-        print("ULTRA DEBUG: Started cleanup_expired_cooldowns task")
+        print("FORCE DEBUG: Started cleanup_expired_cooldowns task")
 
-    if not periodic_ULTRA_save_all_data.is_running():
-        periodic_ULTRA_save_all_data.start()
-        print("ULTRA DEBUG: Started periodic_ULTRA_save_all_data task")
+    if not periodic_FORCE_save_activities.is_running():
+        periodic_FORCE_save_activities.start()
+        print("FORCE DEBUG: Started periodic_FORCE_save_activities task")
 
     try:
         await rebuild_and_cache_vanilla()
     except Exception as e:
-        print(f"ULTRA DEBUG: initial vanilla rebuild failed: {e}")
+        print(f"FORCE DEBUG: initial vanilla rebuild failed: {e}")
 
     if not refresh_vanilla_export.is_running():
         refresh_vanilla_export.start()
-        print("ULTRA DEBUG: Started refresh_vanilla_export task")
+        print("FORCE DEBUG: Started refresh_vanilla_export task")
 
     try:
         register_vanilla_callback(_vanilla_payload)
-        print("ULTRA DEBUG: /vanilla.json exporter registered")
+        print("FORCE DEBUG: /vanilla.json exporter registered")
     except Exception as e:
-        print(f"ULTRA DEBUG: register_vanilla_callback failed: {e}")
+        print(f"FORCE DEBUG: register_vanilla_callback failed: {e}")
 
-    print("ULTRA SUCCESS: *** BOT STARTUP COMPLETE - ALL DATA LOADED WITH ULTRA SECURITY! ***")
+    print("FORCE SUCCESS: *** BOT STARTUP COMPLETE - ALL DATA LOADED! ***")
 
 @bot.event
 async def on_member_update(before: discord.Member, after: discord.Member):
@@ -1483,9 +1281,9 @@ async def on_member_update(before: discord.Member, after: discord.Member):
     if any(is_tier_role_obj(r) for r in (added + removed)):
         try:
             await rebuild_and_cache_vanilla()
-            print(f"ULTRA DEBUG: Rebuilt vanilla cache due to tier role change for {after} in guild {after.guild.id}")
+            print(f"FORCE DEBUG: Rebuilt vanilla cache due to tier role change for {after} in guild {after.guild.id}")
         except Exception as e:
-            print(f"ULTRA DEBUG: on_member_update rebuild failed: {e}")
+            print(f"FORCE DEBUG: on_member_update rebuild failed: {e}")
 
 @bot.event
 async def on_guild_join(guild):
@@ -1656,7 +1454,7 @@ async def on_guild_channel_delete(channel):
                 break
         if user_to_remove:
             del active_testing_sessions[user_to_remove]
-            print(f"ULTRA DEBUG: Cleaned up active testing session for user {user_to_remove} (channel deleted)")
+            print(f"FORCE DEBUG: Cleaned up active testing session for user {user_to_remove} (channel deleted)")
 
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
@@ -1867,7 +1665,7 @@ async def removecooldown(interaction: discord.Interaction, member: discord.Membe
     if had_cooldown:
         try:
             del user_test_cooldowns[member.id]
-            ULTRA_save_user_cooldowns()  # SAUVEGARDE ULTRA-SÉCURISÉE
+            FORCE_save_user_cooldowns()  # SAUVEGARDE FORCÉE
         except Exception:
             pass
 
@@ -1898,7 +1696,7 @@ async def remove(interaction: discord.Interaction, member: discord.Member):
     if had_cooldown:
         try:
             del user_test_cooldowns[member.id]
-            ULTRA_save_user_cooldowns()  # SAUVEGARDE ULTRA-SÉCURISÉE
+            FORCE_save_user_cooldowns()  # SAUVEGARDE FORCÉE
         except Exception:
             pass
 
@@ -1977,15 +1775,15 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
                 waitlists[region].remove(uid)
             except ValueError:
                 pass
-        print(f"ULTRA DEBUG: Cleared {cleared_count} users from {region} waitlist in guild {interaction.guild.id}")
+        print(f"FORCE DEBUG: Cleared {cleared_count} users from {region} waitlist in guild {interaction.guild.id}")
 
     _ensure_guild_queue_state(interaction.guild.id)
     opened_queues[interaction.guild.id].add(region)
 
     _ensure_guild_activity_state(interaction.guild.id, channel.id)
     last_region_activity[interaction.guild.id][channel.id][region] = datetime.datetime.now()
-    ULTRA_save_last_region_activity()  # SAUVEGARDE ULTRA-SÉCURISÉE
-    print(f"ULTRA DEBUG: Updated and saved last activity for guild {interaction.guild.id} channel {channel.id} {region.upper()}")
+    FORCE_save_last_region_activity()  # SAUVEGARDE FORCÉE
+    print(f"FORCE DEBUG: Updated and saved last activity for guild {interaction.guild.id} channel {channel.id} {region.upper()}")
 
     if interaction.user.id not in active_testers[interaction.guild.id][region]:
         active_testers[interaction.guild.id][region].append(interaction.user.id)
@@ -2039,8 +1837,8 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
             opened_queues[interaction.guild.id].discard(region)
             _ensure_guild_activity_state(interaction.guild.id, channel.id)
             last_region_activity[interaction.guild.id][channel.id][region] = datetime.datetime.now()
-            ULTRA_save_last_region_activity()  # SAUVEGARDE ULTRA-SÉCURISÉE
-            print(f"ULTRA DEBUG: Updated last test at for guild {interaction.guild.id} channel {channel.id} region {region.upper()} when queue closed")
+            FORCE_save_last_region_activity()  # SAUVEGARDE FORCÉE
+            print(f"FORCE DEBUG: Updated last test at for guild {interaction.guild.id} channel {channel.id} region {region.upper()} when queue closed")
 
         await interaction.response.send_message(
             embed=discord.Embed(
@@ -2460,9 +2258,9 @@ async def passeval(interaction: discord.Interaction):
                     name=high_eval_category_name,
                     reason=f"Created for high eval channels in {region} region"
                 )
-                print(f"ULTRA DEBUG: Created new category: {high_eval_category_name}")
+                print(f"FORCE DEBUG: Created new category: {high_eval_category_name}")
             except Exception as e:
-                print(f"ULTRA DEBUG: Failed to create category {high_eval_category_name}: {e}")
+                print(f"FORCE DEBUG: Failed to create category {high_eval_category_name}: {e}")
                 high_eval_category = None
         
         # Edit channel name and move to high eval category
@@ -2471,10 +2269,10 @@ async def passeval(interaction: discord.Interaction):
             category=high_eval_category,
             reason=f"Player {player.display_name} passed eval - moved to {high_eval_category_name}"
         )
-        print(f"ULTRA DEBUG: Moved channel {new_channel_name} to category {high_eval_category_name}")
+        print(f"FORCE DEBUG: Moved channel {new_channel_name} to category {high_eval_category_name}")
         
     except Exception as e:
-        print(f"ULTRA DEBUG: Failed to rename/move channel: {e}")
+        print(f"FORCE DEBUG: Failed to rename/move channel: {e}")
         # Continue even if renaming/moving fails
 
     # Get player info
@@ -2555,7 +2353,7 @@ async def close(interaction: discord.Interaction):
         sessions_to_remove = [uid for uid, cid in active_testing_sessions.items() if cid == ch.id]
         for uid in sessions_to_remove:
             del active_testing_sessions[uid]
-            print(f"ULTRA DEBUG: Cleaned up session for user {uid} in channel {ch.id}")
+            print(f"FORCE DEBUG: Cleaned up session for user {uid} in channel {ch.id}")
     except Exception:
         pass
 
@@ -2666,7 +2464,14 @@ async def buildtiers_cmd(interaction: discord.Interaction):
     except Exception as e:
         await interaction.followup.send(f"Error while building tiers: `{e}`", ephemeral=True)
 
-# ============ MAJOR HELPER FUNCTIONS CONTINUE ============
+# === HELPERS (suite) ===
+
+def get_region_from_channel(channel_name: str) -> str:
+    channel_lower = channel_name.lower()
+    for region in ["na", "eu", "as", "au"]:
+        if f"waitlist-{region}" in channel_lower:
+            return region
+    return None
 
 class WaitlistModal(discord.ui.Modal):
     def __init__(self, brand_name: str):
@@ -2733,8 +2538,8 @@ class WaitlistModal(discord.ui.Modal):
                 return
             else:
                 del user_test_cooldowns[user_id]
-                ULTRA_save_user_cooldowns()  # SAUVEGARDE ULTRA-SÉCURISÉE
-                print(f"ULTRA DEBUG: Removed expired cooldown for user {user_id}")
+                FORCE_save_user_cooldowns()  # SAUVEGARDE FORCÉE
+                print(f"FORCE DEBUG: Removed expired cooldown for user {user_id}")
 
         if user_id in active_testing_sessions:
             existing_channel_id = active_testing_sessions[user_id]
@@ -2757,36 +2562,21 @@ class WaitlistModal(discord.ui.Modal):
         guild_id = interaction.guild.id
         _ensure_guild_user_info(guild_id)
         
-        # *** SAUVEGARDE ULTRA-CRITIQUE DU FORMULAIRE ***
-        print(f"ULTRA DEBUG: *** SAVING FORM DATA FOR USER {user_id} ***")
+        # *** SAUVEGARDE FORCÉE DU FORMULAIRE ***
+        print(f"FORCE DEBUG: *** SAVING FORM DATA FOR USER {user_id} ***")
         user_info[guild_id][user_id] = {
             "ign": self.minecraft_ign.value,
             "server": self.minecraft_server.value,
             "region": region_input.upper(),
             "updated_at": datetime.datetime.now().isoformat()
         }
-        print(f"ULTRA DEBUG: Form data to save: {user_info[guild_id][user_id]}")
+        print(f"FORCE DEBUG: Form data to save: {user_info[guild_id][user_id]}")
         
-        # ULTRA SAUVEGARDE - 5 TENTATIVES
-        for attempt in range(5):
-            print(f"ULTRA DEBUG: Form save attempt {attempt + 1}/5")
-            success = ULTRA_save_user_info()
-            if success:
-                print(f"ULTRA SUCCESS: Form saved successfully on attempt {attempt + 1}")
-                break
-            else:
-                print(f"ULTRA ERROR: Form save attempt {attempt + 1} failed")
-                if attempt < 4:
-                    await asyncio.sleep(0.5)
-        else:
-            print(f"ULTRA CRITICAL: All 5 form save attempts failed!")
-
-        # Immediate verification
-        verification_load = ULTRA_safe_load_json(USER_INFO_FILE, "verification check", {})
-        if verification_load and str(guild_id) in verification_load.get("data", {}) and str(user_id) in verification_load["data"][str(guild_id)]:
-            print(f"ULTRA SUCCESS: *** FORM VERIFIED IN FILE FOR USER {user_id} ***")
-        else:
-            print(f"ULTRA CRITICAL ERROR: *** FORM NOT FOUND IN FILE VERIFICATION FOR USER {user_id} ***")
+        # TRIPLE SAUVEGARDE POUR ÊTRE SÛR
+        FORCE_save_user_info()
+        FORCE_save_user_info()
+        FORCE_save_user_info()
+        print(f"FORCE SUCCESS: *** FORM SAVED 3 TIMES FOR USER {user_id} ***")
 
         waitlist_role = discord.utils.get(
             interaction.guild.roles,
@@ -2821,58 +2611,6 @@ class WaitlistModal(discord.ui.Modal):
         embed.set_footer(text="Only you can see this • Dismiss message")
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-# ============ BACKGROUND TASKS ============
-
-@tasks.loop(minutes=1)
-async def refresh_messages():
-    global last_test_session
-    last_test_session = datetime.datetime.now()
-    for guild in bot.guilds:
-        if not is_guild_authorized(getattr(guild, "id", None)):
-            continue
-        for region in waitlists.keys():
-            try:
-                await update_waitlist_message(guild, region)
-            except Exception as e:
-                print(f"ULTRA DEBUG: Error refreshing waitlist message for {region}: {e}")
-
-@tasks.loop(hours=1)
-async def cleanup_expired_cooldowns():
-    current_time = datetime.datetime.now()
-    expired_users = [user_id for user_id, cooldown_time in user_test_cooldowns.items() if cooldown_time <= current_time]
-    if expired_users:
-        for user_id in expired_users:
-            del user_test_cooldowns[user_id]
-        ULTRA_save_user_cooldowns()  # SAUVEGARDE ULTRA-SÉCURISÉE
-        print(f"ULTRA DEBUG: Cleaned up {len(expired_users)} expired cooldowns")
-
-@tasks.loop(minutes=3)  # SAUVEGARDE TRÈS FRÉQUENTE POUR ÉVITER LA PERTE DE DONNÉES
-async def periodic_ULTRA_save_all_data():
-    """SAUVEGARDE ULTRA-CRITIQUE PÉRIODIQUE DE TOUTES LES DONNÉES"""
-    try:
-        print("ULTRA DEBUG: *** PERFORMING PERIODIC ULTRA SAVE - ALL DATA ***")
-        
-        # Save all data types
-        ULTRA_save_last_region_activity()
-        ULTRA_save_user_info()
-        ULTRA_save_user_cooldowns()
-        ULTRA_save_tester_stats()
-        
-        print("ULTRA SUCCESS: *** PERIODIC ULTRA SAVE COMPLETED ***")
-        
-    except Exception as e:
-        print(f"ULTRA CRITICAL ERROR: Periodic save failed: {e}")
-        traceback.print_exc()
-
-# (I'll continue with the remaining helper functions and other commands...)
-
-def get_region_from_channel(channel_name: str) -> str:
-    channel_lower = channel_name.lower()
-    for region in ["na", "eu", "as", "au"]:
-        if f"waitlist-{region}" in channel_lower:
-            return region
-    return None
 
 async def update_waitlist_message(guild: discord.Guild, region: str):
     if not is_guild_authorized(getattr(guild, "id", None)):
@@ -2927,7 +2665,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
         show_button = False
         ping_content = None
 
-    # Create conditional embed
+    # Créer l'embed conditionnel
     if region in guild_queue and tester_ids:
         # Tester(s) Available embed with new format
         embed = discord.Embed(title="Tester(s) Available!",
@@ -3016,7 +2754,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
             guild_msg_ids[region] = new_message.id
 
     except Exception as e:
-        print(f"ULTRA DEBUG: Error in update_waitlist_message for {region} in guild {guild.id}: {e}")
+        print(f"FORCE DEBUG: Error in update_waitlist_message for {region} in guild {guild.id}: {e}")
 
 async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str, position: int):
     if not is_guild_authorized(getattr(guild, "id", None)):
@@ -3049,7 +2787,7 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
         else:
             await logs_channel.send(embed=embed)
     except Exception as e:
-        print(f"ULTRA DEBUG: Error logging queue join: {e}")
+        print(f"FORCE DEBUG: Error logging queue join: {e}")
 
 async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
     if not is_guild_authorized(getattr(guild, "id", None)):
@@ -3081,11 +2819,11 @@ async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
         )
         embed.set_author(name=get_brand_name(guild), icon_url=get_brand_logo_url(guild))
         await member.send(embed=embed)
-        print(f"ULTRA DEBUG: Sent 'Queue Position Updated' DM to {member.name} for {region.upper()} region (guild {guild.id})")
+        print(f"FORCE DEBUG: Sent 'Queue Position Updated' DM to {member.name} for {region.upper()} region (guild {guild.id})")
     except discord.Forbidden:
-        print(f"ULTRA DEBUG: Could not DM {member} (privacy settings)")
+        print(f"FORCE DEBUG: Could not DM {member} (privacy settings)")
     except Exception as e:
-        print(f"ULTRA DEBUG: Error sending top-of-queue DM: {e}")
+        print(f"FORCE DEBUG: Error sending top-of-queue DM: {e}")
 
 async def notify_first_in_queue(guild: discord.Guild, region: str, tester: discord.Member):
     await maybe_notify_queue_top_change(guild, region)
@@ -3111,7 +2849,7 @@ async def send_eval_welcome_message(channel: discord.TextChannel, region: str, p
         )
         await channel.send(embed=info_embed)
     except Exception as e:
-        print(f"ULTRA DEBUG: Failed to send welcome message in {channel.id}: {e}")
+        print(f"FORCE DEBUG: Failed to send welcome message in {channel.id}: {e}")
 
 async def create_initial_waitlist_message(guild: discord.Guild, region: str):
     if not is_guild_authorized(getattr(guild, "id", None)):
@@ -3157,7 +2895,7 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
         waitlist_message_ids[guild.id][region] = initial_message.id
 
     except Exception as e:
-        print(f"ULTRA DEBUG: Error creating initial message for {region} in guild {guild.id}: {e}")
+        print(f"FORCE DEBUG: Error creating initial message for {region} in guild {guild.id}: {e}")
 
 def _display_name_or_ign(user_id: int, guild: discord.Guild) -> str:
     try:
@@ -3195,7 +2933,42 @@ async def update_leaderboard(guild: discord.Guild):
         else:
             await channel.send(embed=embed)
     except Exception as e:
-        print(f"ULTRA DEBUG: update_leaderboard error: {e}")
+        print(f"FORCE DEBUG: update_leaderboard error: {e}")
+
+# === TASKS RENFORCÉES ===
+
+@tasks.loop(minutes=1)
+async def refresh_messages():
+    global last_test_session
+    last_test_session = datetime.datetime.now()
+    for guild in bot.guilds:
+        if not is_guild_authorized(getattr(guild, "id", None)):
+            continue
+        for region in waitlists.keys():
+            try:
+                await update_waitlist_message(guild, region)
+            except Exception as e:
+                print(f"FORCE DEBUG: Error refreshing waitlist message for {region}: {e}")
+
+@tasks.loop(hours=1)
+async def cleanup_expired_cooldowns():
+    current_time = datetime.datetime.now()
+    expired_users = [user_id for user_id, cooldown_time in user_test_cooldowns.items() if cooldown_time <= current_time]
+    if expired_users:
+        for user_id in expired_users:
+            del user_test_cooldowns[user_id]
+        FORCE_save_user_cooldowns()  # SAUVEGARDE FORCÉE
+        print(f"FORCE DEBUG: Cleaned up {len(expired_users)} expired cooldowns")
+
+@tasks.loop(minutes=5)  # RÉDUIT À 5 MINUTES POUR PLUS DE FRÉQUENCE
+async def periodic_FORCE_save_activities():
+    """SAUVEGARDE FORCÉE TOUTES LES 5 MINUTES"""
+    print("FORCE DEBUG: *** PERFORMING PERIODIC FORCED SAVE ***")
+    FORCE_save_last_region_activity()
+    FORCE_save_user_info()
+    FORCE_save_user_cooldowns()
+    FORCE_save_tester_stats()
+    print("FORCE SUCCESS: *** PERIODIC FORCED SAVE COMPLETED ***")
 
 # === RUN BOT ===
 
@@ -3206,5 +2979,5 @@ if __name__ == "__main__":
         keep_alive()
     except Exception:
         pass
-    print("ULTRA DEBUG: *** STARTING BOT WITH ULTRA-SECURE SAVE SYSTEM ***")
+    print("FORCE DEBUG: *** STARTING BOT WITH FORCED SAVE SYSTEM ***")
     run_with_backoff()
