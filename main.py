@@ -38,7 +38,24 @@ GUILD_ID = int(os.getenv("GUILD_ID", "0")) if os.getenv("GUILD_ID") else None
 
 # Bot owner (Heuxil) and server authorization persistence
 OWNER_ID = 836452038548127764  # Heuxil
-AUTHORIZED_FILE = "authorized_guilds.json"
+
+# FORCER LES CHEMINS ABSOLUS POUR ÉVITER LES PROBLÈMES
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if not BASE_DIR or BASE_DIR == "/":
+    BASE_DIR = r"C:\Users\Frede\Downloads\VerseTL"
+
+print(f"FORCE DEBUG: BASE_DIR = {BASE_DIR}")
+
+AUTHORIZED_FILE = os.path.join(BASE_DIR, "authorized_guilds.json")
+STATS_FILE = os.path.join(BASE_DIR, "tester_stats.json")
+USER_INFO_FILE = os.path.join(BASE_DIR, "user_info.json")
+COOLDOWNS_FILE = os.path.join(BASE_DIR, "user_cooldowns.json")
+LAST_ACTIVITY_FILE = os.path.join(BASE_DIR, "last_region_activity.json")
+
+print(f"FORCE DEBUG: Files will be saved to:")
+print(f"  - USER_INFO_FILE: {USER_INFO_FILE}")
+print(f"  - LAST_ACTIVITY_FILE: {LAST_ACTIVITY_FILE}")
+
 authorized_guilds = set()
 APP_CHECK_ADDED = False  # pour n'ajouter le check global qu'une seule fois
 
@@ -208,25 +225,28 @@ async def build_tiers(bot: commands.Bot) -> dict:
 def load_authorized_guilds():
     global authorized_guilds
     try:
+        print(f"FORCE DEBUG: Loading authorized guilds from {AUTHORIZED_FILE}")
         if os.path.exists(AUTHORIZED_FILE):
             with open(AUTHORIZED_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 authorized_guilds = set(data.get("guild_ids", []))
-                print(f"DEBUG: Loaded {len(authorized_guilds)} authorized guild(s)")
+                print(f"FORCE DEBUG: Loaded {len(authorized_guilds)} authorized guild(s)")
         else:
             authorized_guilds = set()
-            print("DEBUG: No authorized_guilds file found, starting empty")
+            print(f"FORCE DEBUG: No authorized_guilds file found at {AUTHORIZED_FILE}, starting empty")
     except Exception as e:
-        print(f"DEBUG: Error loading authorized guilds: {e}")
+        print(f"FORCE ERROR: Error loading authorized guilds: {e}")
         authorized_guilds = set()
 
 def save_authorized_guilds():
     try:
+        print(f"FORCE DEBUG: Saving authorized guilds to {AUTHORIZED_FILE}")
+        os.makedirs(os.path.dirname(AUTHORIZED_FILE), exist_ok=True)
         with open(AUTHORIZED_FILE, "w", encoding="utf-8") as f:
             json.dump({"guild_ids": list(authorized_guilds)}, f, indent=2)
-        print(f"DEBUG: Saved {len(authorized_guilds)} authorized guild(s)")
+        print(f"FORCE DEBUG: Successfully saved {len(authorized_guilds)} authorized guild(s)")
     except Exception as e:
-        print(f"DEBUG: Error saving authorized guilds: {e}")
+        print(f"FORCE ERROR: Error saving authorized guilds: {e}")
 
 def is_guild_authorized(guild_id):
     if guild_id is None:
@@ -255,11 +275,7 @@ last_test_session = datetime.datetime.now()
 # Last Test At par serveur, par région ET par canal
 last_region_activity = {}  # {guild_id: {channel_id: {"na": datetime|None, "eu": ..., "as": ..., "au": ...}}}
 tester_stats = {}  # {user_id: test_count}
-STATS_FILE = "tester_stats.json"
-USER_INFO_FILE = "user_info.json"
 user_test_cooldowns = {}  # {user_id: datetime}
-COOLDOWNS_FILE = "user_cooldowns.json"
-LAST_ACTIVITY_FILE = "last_region_activity.json"
 
 def _ensure_guild_queue_state(guild_id: int):
     if guild_id not in opened_queues:
@@ -302,14 +318,14 @@ async def rebuild_and_cache_vanilla():
         **built,
     }
     total = sum(len(v) for v in built["tiers"].values())
-    print(f"DEBUG: Rebuilt vanilla cache with {total} users")
+    print(f"FORCE DEBUG: Rebuilt vanilla cache with {total} users")
 
 @tasks.loop(minutes=10)
 async def refresh_vanilla_export():
     try:
         await rebuild_and_cache_vanilla()
     except Exception as e:
-        print(f"DEBUG: refresh_vanilla_export failed: {e}")
+        print(f"FORCE DEBUG: refresh_vanilla_export failed: {e}")
 
 def _vanilla_payload():
     return VANILLA_CACHE
@@ -417,7 +433,7 @@ def apply_cooldown(user_id: int, member: discord.Member):
     user_test_cooldowns[user_id] = cooldown_end
     save_user_cooldowns()
     role_type = "VT • Server Booster" if has_booster_role(member) else "Regular"
-    print(f"DEBUG: Applied {cooldown_days}-day cooldown for {role_type} user {member.name} (ID: {user_id}) until {cooldown_end}")
+    print(f"FORCE DEBUG: Applied {cooldown_days}-day cooldown for {role_type} user {member.name} (ID: {user_id}) until {cooldown_end}")
     return cooldown_days
 
 def has_tester_role(member: discord.Member) -> bool:
@@ -468,48 +484,85 @@ def is_tier_role_obj(role: discord.Role) -> bool:
         return True
     return _normalize_role_name(role.name) in NAME_RANKS
 
-def save_tester_stats():
-    try:
-        with open(STATS_FILE, 'w') as f:
-            json.dump(tester_stats, f, indent=2)
-        print(f"DEBUG: Saved tester stats to {STATS_FILE}")
-    except Exception as e:
-        print(f"DEBUG: Error saving tester stats: {e}")
+# ====== FONCTIONS DE SAUVEGARDE ULTRA-RENFORCÉES ======
 
-def load_tester_stats():
+def FORCE_save_tester_stats():
+    """SAUVEGARDE FORCÉE DES STATS TESTERS"""
+    try:
+        print(f"FORCE DEBUG: *** SAVING TESTER STATS TO {STATS_FILE} ***")
+        os.makedirs(os.path.dirname(STATS_FILE), exist_ok=True)
+        
+        # Conversion en format sérialisable
+        serializable_stats = {str(user_id): count for user_id, count in tester_stats.items()}
+        
+        with open(STATS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(serializable_stats, f, indent=2, ensure_ascii=False)
+        
+        # Vérification immédiate
+        if os.path.exists(STATS_FILE):
+            print(f"FORCE SUCCESS: Tester stats saved successfully! File size: {os.path.getsize(STATS_FILE)} bytes")
+        else:
+            print(f"FORCE ERROR: File {STATS_FILE} does not exist after save!")
+            
+    except Exception as e:
+        print(f"FORCE ERROR: Failed to save tester stats: {e}")
+        import traceback
+        traceback.print_exc()
+
+def FORCE_load_tester_stats():
+    """CHARGEMENT FORCÉ DES STATS TESTERS"""
     global tester_stats
     try:
+        print(f"FORCE DEBUG: *** LOADING TESTER STATS FROM {STATS_FILE} ***")
         if os.path.exists(STATS_FILE):
-            with open(STATS_FILE, 'r') as f:
+            with open(STATS_FILE, 'r', encoding='utf-8') as f:
                 loaded_stats = json.load(f)
-                tester_stats = {int(user_id): count for user_id, count in loaded_stats.items()}
-            print(f"DEBUG: Loaded {len(tester_stats)} tester stats from {STATS_FILE}")
+            tester_stats = {int(user_id): count for user_id, count in loaded_stats.items()}
+            print(f"FORCE SUCCESS: Loaded {len(tester_stats)} tester stats")
+            for user_id, count in list(tester_stats.items())[:5]:  # Show first 5
+                print(f"  - User {user_id}: {count} tests")
         else:
-            print(f"DEBUG: No existing stats file found, starting fresh")
+            print(f"FORCE DEBUG: No tester stats file found at {STATS_FILE}")
             tester_stats = {}
     except Exception as e:
-        print(f"DEBUG: Error loading tester stats: {e}")
+        print(f"FORCE ERROR: Error loading tester stats: {e}")
         tester_stats = {}
 
-def save_user_cooldowns():
+def FORCE_save_user_cooldowns():
+    """SAUVEGARDE FORCÉE DES COOLDOWNS"""
     try:
+        print(f"FORCE DEBUG: *** SAVING USER COOLDOWNS TO {COOLDOWNS_FILE} ***")
+        os.makedirs(os.path.dirname(COOLDOWNS_FILE), exist_ok=True)
+        
         cooldowns_data = {}
         for user_id, cooldown_time in user_test_cooldowns.items():
             cooldowns_data[str(user_id)] = cooldown_time.isoformat()
-        with open(COOLDOWNS_FILE, 'w') as f:
-            json.dump(cooldowns_data, f, indent=2)
-        print(f"DEBUG: Saved {len(cooldowns_data)} user cooldowns to {COOLDOWNS_FILE}")
+            
+        with open(COOLDOWNS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(cooldowns_data, f, indent=2, ensure_ascii=False)
+        
+        # Vérification immédiate
+        if os.path.exists(COOLDOWNS_FILE):
+            print(f"FORCE SUCCESS: User cooldowns saved! File size: {os.path.getsize(COOLDOWNS_FILE)} bytes")
+        else:
+            print(f"FORCE ERROR: File {COOLDOWNS_FILE} does not exist after save!")
+            
     except Exception as e:
-        print(f"DEBUG: Error saving user cooldowns: {e}")
+        print(f"FORCE ERROR: Failed to save user cooldowns: {e}")
+        import traceback
+        traceback.print_exc()
 
-def load_user_cooldowns():
+def FORCE_load_user_cooldowns():
+    """CHARGEMENT FORCÉ DES COOLDOWNS"""
     global user_test_cooldowns
     try:
+        print(f"FORCE DEBUG: *** LOADING USER COOLDOWNS FROM {COOLDOWNS_FILE} ***")
         if os.path.exists(COOLDOWNS_FILE):
-            with open(COOLDOWNS_FILE, 'r') as f:
+            with open(COOLDOWNS_FILE, 'r', encoding='utf-8') as f:
                 loaded_cooldowns = json.load(f)
             user_test_cooldowns = {}
             current_time = datetime.datetime.now()
+            
             for user_id_str, cooldown_str in loaded_cooldowns.items():
                 try:
                     user_id = int(user_id_str)
@@ -517,105 +570,230 @@ def load_user_cooldowns():
                     if cooldown_time > current_time:
                         user_test_cooldowns[user_id] = cooldown_time
                         time_remaining = cooldown_time - current_time
-                        days = time_remaining.days
-                        hours = time_remaining.seconds // 3600
-                        print(f"DEBUG: Loaded active cooldown for user {user_id}: {days}d {hours}h remaining")
-                    else:
-                        print(f"DEBUG: Skipped expired cooldown for user {user_id}")
-                except (ValueError, TypeError) as e:
-                    print(f"DEBUG: Error parsing cooldown for user {user_id_str}: {e}")
-            print(f"DEBUG: Loaded {len(user_test_cooldowns)} active cooldowns from {COOLDOWNS_FILE}")
+                        print(f"FORCE DEBUG: Loaded cooldown for user {user_id}: {time_remaining.days}d {time_remaining.seconds//3600}h remaining")
+                except Exception as e:
+                    print(f"FORCE ERROR: Failed to parse cooldown for user {user_id_str}: {e}")
+            
+            print(f"FORCE SUCCESS: Loaded {len(user_test_cooldowns)} active cooldowns")
         else:
-            print(f"DEBUG: No existing cooldowns file found, starting fresh")
+            print(f"FORCE DEBUG: No cooldowns file found at {COOLDOWNS_FILE}")
             user_test_cooldowns = {}
     except Exception as e:
-        print(f"DEBUG: Error loading user cooldowns: {e}")
+        print(f"FORCE ERROR: Error loading user cooldowns: {e}")
         user_test_cooldowns = {}
 
-def save_last_region_activity():
+def FORCE_save_user_info():
+    """SAUVEGARDE FORCÉE DES INFORMATIONS UTILISATEUR - LA PLUS CRITIQUE !"""
     try:
-        data = {}
-        for gid, channels in last_region_activity.items():
-            data[str(gid)] = {}
-            for channel_id, regions in channels.items():
-                data[str(gid)][str(channel_id)] = {}
-                for region, last_time in regions.items():
-                    data[str(gid)][str(channel_id)][region] = last_time.isoformat() if last_time is not None else None
-        with open(LAST_ACTIVITY_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2)
-        print(f"DEBUG: Saved last region activities (per guild and channel) to {LAST_ACTIVITY_FILE}")
+        print(f"FORCE DEBUG: *** SAVING USER INFO TO {USER_INFO_FILE} ***")
+        print(f"FORCE DEBUG: Current user_info contains {len(user_info)} guilds")
+        for guild_id, guild_data in user_info.items():
+            print(f"  - Guild {guild_id}: {len(guild_data)} users")
+        
+        # Créer le dossier si nécessaire
+        os.makedirs(os.path.dirname(USER_INFO_FILE), exist_ok=True)
+        
+        # Convertir en format sérialisable
+        serializable = {}
+        for guild_id, guild_data in user_info.items():
+            serializable[str(guild_id)] = {}
+            for uid, data in guild_data.items():
+                serializable[str(guild_id)][str(uid)] = data
+                
+        # Sauvegarder avec timestamp
+        save_data = {
+            "saved_at": datetime.datetime.now().isoformat(),
+            "data": serializable
+        }
+        
+        with open(USER_INFO_FILE, "w", encoding="utf-8") as f:
+            json.dump(save_data, f, indent=2, ensure_ascii=False)
+        
+        # Vérification immédiate
+        if os.path.exists(USER_INFO_FILE):
+            file_size = os.path.getsize(USER_INFO_FILE)
+            print(f"FORCE SUCCESS: User info saved successfully! File size: {file_size} bytes")
+            
+            # Test de re-lecture immédiate
+            with open(USER_INFO_FILE, "r", encoding="utf-8") as f:
+                test_load = json.load(f)
+            total_users = sum(len(guild_data) for guild_data in test_load.get("data", {}).values())
+            print(f"FORCE VERIFY: File contains {total_users} users total")
+        else:
+            print(f"FORCE ERROR: File {USER_INFO_FILE} does not exist after save!")
+            
     except Exception as e:
-        print(f"DEBUG: Error saving last region activities: {e}")
+        print(f"FORCE ERROR: Failed to save user info: {e}")
+        import traceback
+        traceback.print_exc()
 
-def load_last_region_activity():
+def FORCE_load_user_info():
+    """CHARGEMENT FORCÉ DES INFORMATIONS UTILISATEUR"""
+    global user_info
+    try:
+        print(f"FORCE DEBUG: *** LOADING USER INFO FROM {USER_INFO_FILE} ***")
+        user_info = {}  # Reset
+        
+        if os.path.exists(USER_INFO_FILE):
+            file_size = os.path.getsize(USER_INFO_FILE)
+            print(f"FORCE DEBUG: Found file with size {file_size} bytes")
+            
+            with open(USER_INFO_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            
+            # Support pour les anciens et nouveaux formats
+            if "data" in raw:
+                # Nouveau format avec timestamp
+                data_section = raw["data"]
+                saved_at = raw.get("saved_at", "unknown")
+                print(f"FORCE DEBUG: Loading data saved at {saved_at}")
+            else:
+                # Ancien format direct
+                data_section = raw
+            
+            for guild_id_str, guild_data in data_section.items():
+                try:
+                    guild_id = int(guild_id_str)
+                    user_info[guild_id] = {}
+                    for uid_str, data in guild_data.items():
+                        try:
+                            uid = int(uid_str)
+                            user_info[guild_id][uid] = data
+                            print(f"FORCE DEBUG: Loaded user {uid} -> {data}")
+                        except Exception as e:
+                            print(f"FORCE ERROR: Failed to parse user {uid_str}: {e}")
+                    print(f"FORCE SUCCESS: Guild {guild_id} loaded with {len(user_info[guild_id])} users")
+                except Exception as e:
+                    print(f"FORCE ERROR: Failed to parse guild {guild_id_str}: {e}")
+            
+            total_users = sum(len(guild_data) for guild_data in user_info.values())
+            print(f"FORCE SUCCESS: Loaded {total_users} user_info entries across {len(user_info)} guilds")
+        else:
+            print(f"FORCE DEBUG: No user_info file found at {USER_INFO_FILE}")
+    except Exception as e:
+        print(f"FORCE ERROR: Error loading user_info: {e}")
+        import traceback
+        traceback.print_exc()
+        user_info = {}
+
+def FORCE_save_last_region_activity():
+    """SAUVEGARDE FORCÉE DES ACTIVITÉS DE RÉGION"""
+    try:
+        print(f"FORCE DEBUG: *** SAVING LAST REGION ACTIVITY TO {LAST_ACTIVITY_FILE} ***")
+        print(f"FORCE DEBUG: Current activity data contains {len(last_region_activity)} guilds")
+        
+        os.makedirs(os.path.dirname(LAST_ACTIVITY_FILE), exist_ok=True)
+        
+        data = {
+            "saved_at": datetime.datetime.now().isoformat(),
+            "data": {}
+        }
+        
+        for gid, channels in last_region_activity.items():
+            data["data"][str(gid)] = {}
+            for channel_id, regions in channels.items():
+                data["data"][str(gid)][str(channel_id)] = {}
+                for region, last_time in regions.items():
+                    data["data"][str(gid)][str(channel_id)][region] = last_time.isoformat() if last_time is not None else None
+                    
+        with open(LAST_ACTIVITY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        
+        # Vérification immédiate
+        if os.path.exists(LAST_ACTIVITY_FILE):
+            print(f"FORCE SUCCESS: Last region activity saved! File size: {os.path.getsize(LAST_ACTIVITY_FILE)} bytes")
+        else:
+            print(f"FORCE ERROR: File {LAST_ACTIVITY_FILE} does not exist after save!")
+            
+    except Exception as e:
+        print(f"FORCE ERROR: Failed to save last region activity: {e}")
+        import traceback
+        traceback.print_exc()
+
+def FORCE_load_last_region_activity():
+    """CHARGEMENT FORCÉ DES ACTIVITÉS DE RÉGION"""
     global last_region_activity
     try:
-        last_region_activity = {}  # Reset first
+        print(f"FORCE DEBUG: *** LOADING LAST REGION ACTIVITY FROM {LAST_ACTIVITY_FILE} ***")
+        last_region_activity = {}  # Reset
+        
         if os.path.exists(LAST_ACTIVITY_FILE):
-            print(f"DEBUG: Loading last region activity from {LAST_ACTIVITY_FILE}...")
+            file_size = os.path.getsize(LAST_ACTIVITY_FILE)
+            print(f"FORCE DEBUG: Found file with size {file_size} bytes")
+            
             with open(LAST_ACTIVITY_FILE, 'r', encoding='utf-8') as f:
                 loaded = json.load(f)
-            print(f"DEBUG: Activity file contains {len(loaded)} guild entries")
             
-            for gid_str, channels in loaded.items():
+            # Support pour les anciens et nouveaux formats
+            if "data" in loaded:
+                data_section = loaded["data"]
+                saved_at = loaded.get("saved_at", "unknown")
+                print(f"FORCE DEBUG: Loading activity data saved at {saved_at}")
+            else:
+                data_section = loaded
+            
+            for gid_str, channels in data_section.items():
                 try:
                     gid = int(gid_str)
-                except Exception as e:
-                    print(f"DEBUG: Error parsing guild ID {gid_str}: {e}")
-                    continue
+                    last_region_activity[gid] = {}
                     
-                last_region_activity[gid] = {}
-                print(f"DEBUG: Processing guild {gid} with {len(channels)} channel entries")
-                
-                # Support both old format (direct regions) and new format (channels)
-                if channels and isinstance(list(channels.values())[0], dict) and any(isinstance(v, dict) for v in channels.values()):
-                    # New format: {guild_id: {channel_id: {region: datetime}}}
-                    print(f"DEBUG: Using new format for guild {gid}")
-                    for channel_id_str, regions in channels.items():
-                        try:
-                            channel_id = int(channel_id_str)
-                        except Exception as e:
-                            print(f"DEBUG: Error parsing channel ID {channel_id_str}: {e}")
-                            continue
-                        last_region_activity[gid][channel_id] = {"na": None, "eu": None, "as": None, "au": None}
+                    # Support old and new formats
+                    if channels and isinstance(list(channels.values())[0], dict) and any(isinstance(v, dict) for v in channels.values()):
+                        # New format: {guild_id: {channel_id: {region: datetime}}}
+                        for channel_id_str, regions in channels.items():
+                            try:
+                                channel_id = int(channel_id_str)
+                                last_region_activity[gid][channel_id] = {"na": None, "eu": None, "as": None, "au": None}
+                                for region in ["na", "eu", "as", "au"]:
+                                    val = regions.get(region)
+                                    if val:
+                                        try:
+                                            parsed_time = datetime.datetime.fromisoformat(val)
+                                            last_region_activity[gid][channel_id][region] = parsed_time
+                                            time_ago = datetime.datetime.now() - parsed_time
+                                            print(f"FORCE DEBUG: Restored activity for guild {gid} channel {channel_id} {region.upper()}: {time_ago.days} days ago")
+                                        except Exception as e:
+                                            print(f"FORCE ERROR: Failed to parse datetime {val}: {e}")
+                            except Exception as e:
+                                print(f"FORCE ERROR: Failed to parse channel {channel_id_str}: {e}")
+                    else:
+                        # Old format compatibility: {guild_id: {region: datetime}}
+                        default_channel_id = 0
+                        last_region_activity[gid][default_channel_id] = {"na": None, "eu": None, "as": None, "au": None}
                         for region in ["na", "eu", "as", "au"]:
-                            val = regions.get(region)
+                            val = channels.get(region)
                             if val:
                                 try:
                                     parsed_time = datetime.datetime.fromisoformat(val)
-                                    last_region_activity[gid][channel_id][region] = parsed_time
+                                    last_region_activity[gid][default_channel_id][region] = parsed_time
                                     time_ago = datetime.datetime.now() - parsed_time
-                                    print(f"DEBUG: Restored last activity for guild {gid} channel {channel_id} {region.upper()}: {time_ago.days} days ago")
-                                except (ValueError, TypeError) as e:
-                                    print(f"DEBUG: Error parsing datetime {val} for guild {gid} channel {channel_id} {region}: {e}")
-                                    last_region_activity[gid][channel_id][region] = None
-                else:
-                    # Old format compatibility: {guild_id: {region: datetime}}
-                    print(f"DEBUG: Using old format compatibility for guild {gid}")
-                    default_channel_id = 0  # Use 0 as default for backward compatibility
-                    last_region_activity[gid][default_channel_id] = {"na": None, "eu": None, "as": None, "au": None}
-                    for region in ["na", "eu", "as", "au"]:
-                        val = channels.get(region)
-                        if val:
-                            try:
-                                parsed_time = datetime.datetime.fromisoformat(val)
-                                last_region_activity[gid][default_channel_id][region] = parsed_time
-                                time_ago = datetime.datetime.now() - parsed_time
-                                print(f"DEBUG: Migrated last activity for guild {gid} {region.upper()}: {time_ago.days} days ago")
-                            except (ValueError, TypeError) as e:
-                                print(f"DEBUG: Error parsing datetime {val} for guild {gid} {region}: {e}")
-                                last_region_activity[gid][default_channel_id][region] = None
+                                    print(f"FORCE DEBUG: Migrated activity for guild {gid} {region.upper()}: {time_ago.days} days ago")
+                                except Exception as e:
+                                    print(f"FORCE ERROR: Failed to parse datetime {val}: {e}")
+                    
+                except Exception as e:
+                    print(f"FORCE ERROR: Failed to parse guild {gid_str}: {e}")
             
             total_guilds = len(last_region_activity)
             total_activities = sum(len(guild_data) for guild_data in last_region_activity.values())
-            print(f"DEBUG: Successfully loaded activity data for {total_guilds} guilds with {total_activities} total channel entries")
+            print(f"FORCE SUCCESS: Loaded activity data for {total_guilds} guilds with {total_activities} channel entries")
         else:
-            print(f"DEBUG: No existing last activity file found at {LAST_ACTIVITY_FILE}, starting fresh")
+            print(f"FORCE DEBUG: No last activity file found at {LAST_ACTIVITY_FILE}")
     except Exception as e:
-        print(f"DEBUG: Error loading last region activities: {e}")
+        print(f"FORCE ERROR: Error loading last region activity: {e}")
         import traceback
         traceback.print_exc()
         last_region_activity = {}
+
+# Aliases pour compatibilité
+save_tester_stats = FORCE_save_tester_stats
+load_tester_stats = FORCE_load_tester_stats
+save_user_cooldowns = FORCE_save_user_cooldowns
+load_user_cooldowns = FORCE_load_user_cooldowns
+save_user_info = FORCE_save_user_info
+load_user_info = FORCE_load_user_info
+save_last_region_activity = FORCE_save_last_region_activity
+load_last_region_activity = FORCE_load_last_region_activity
 
 def get_sheets_service():
     try:
@@ -630,68 +808,20 @@ def get_sheets_service():
             )
             return build('sheets', 'v4', credentials=credentials)
     except Exception as e:
-        print(f"DEBUG: Error setting up Google Sheets service: {e}")
+        print(f"FORCE DEBUG: Error setting up Google Sheets service: {e}")
     return None
-
-def save_user_info():
-    try:
-        # Convertir les guild_id et user_id en string pour JSON
-        serializable = {}
-        for guild_id, guild_data in user_info.items():
-            serializable[str(guild_id)] = {str(uid): data for uid, data in guild_data.items()}
-        with open(USER_INFO_FILE, "w", encoding="utf-8") as f:
-            json.dump(serializable, f, indent=2, ensure_ascii=False)
-        total_users = sum(len(guild_data) for guild_data in user_info.values())
-        print(f"DEBUG: Saved {total_users} user_info entries across {len(user_info)} guilds to {USER_INFO_FILE}")
-    except Exception as e:
-        print(f"DEBUG: Error saving user_info: {e}")
-
-def load_user_info():
-    global user_info
-    try:
-        user_info = {}  # Reset first
-        if os.path.exists(USER_INFO_FILE):
-            print(f"DEBUG: Loading user_info from {USER_INFO_FILE}...")
-            with open(USER_INFO_FILE, "r", encoding="utf-8") as f:
-                raw = json.load(f)
-            print(f"DEBUG: Raw file contains {len(raw)} guild entries")
-            
-            for guild_id_str, guild_data in raw.items():
-                try:
-                    guild_id = int(guild_id_str)
-                    user_info[guild_id] = {}
-                    for uid_str, data in guild_data.items():
-                        try:
-                            uid = int(uid_str)
-                            user_info[guild_id][uid] = data
-                            print(f"DEBUG: Loaded user {uid} data: {data}")
-                        except (ValueError, TypeError) as e:
-                            print(f"DEBUG: Error parsing user {uid_str}: {e}")
-                    print(f"DEBUG: Guild {guild_id} loaded with {len(user_info[guild_id])} users")
-                except (ValueError, TypeError) as e:
-                    print(f"DEBUG: Error parsing guild {guild_id_str}: {e}")
-                    
-            total_users = sum(len(guild_data) for guild_data in user_info.values())
-            print(f"DEBUG: Successfully loaded {total_users} user_info entries across {len(user_info)} guilds")
-        else:
-            print(f"DEBUG: No user_info file found at {USER_INFO_FILE}, starting fresh")
-    except Exception as e:
-        print(f"DEBUG: Error loading user_info: {e}")
-        import traceback
-        traceback.print_exc()
-        user_info = {}
 
 async def add_ign_to_sheet(ign: str, tier: str):
     """Add IGN to the appropriate tier column in the Google Sheet"""
     try:
         service = get_sheets_service()
         if not service:
-            print("DEBUG: Google Sheets service not available")
+            print("FORCE DEBUG: Google Sheets service not available")
             return False
 
         column = TIER_COLUMNS.get(tier.upper())
         if not column:
-            print(f"DEBUG: Unknown tier: {tier}")
+            print(f"FORCE DEBUG: Unknown tier: {tier}")
             return False
 
         range_name = f"'VerseTL Crystal'!{column}:{column}"
@@ -713,14 +843,14 @@ async def add_ign_to_sheet(ign: str, tier: str):
             body=body
         ).execute()
 
-        print(f"DEBUG: Successfully added {ign} to {tier} column at row {next_row}")
+        print(f"FORCE DEBUG: Successfully added {ign} to {tier} column at row {next_row}")
         return True
 
     except HttpError as e:
-        print(f"DEBUG: Google Sheets API error: {e}")
+        print(f"FORCE DEBUG: Google Sheets API error: {e}")
         return False
     except Exception as e:
-        print(f"DEBUG: Error adding IGN to sheet: {e}")
+        print(f"FORCE DEBUG: Error adding IGN to sheet: {e}")
         return False
 
 async def update_user_count_channel(guild):
@@ -804,7 +934,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
     if tester_id not in tester_stats:
         tester_stats[tester_id] = 0
     tester_stats[tester_id] += 1
-    save_tester_stats()
+    FORCE_save_tester_stats()  # SAUVEGARDE FORCÉE
 
     try:
         await add_ign_to_sheet(ign, earned_rank)
@@ -838,10 +968,10 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
             channel_id = interaction.channel.id if hasattr(interaction, 'channel') and interaction.channel else 0
             _ensure_guild_activity_state(guild.id, channel_id)
             last_region_activity[guild.id][channel_id][reg] = datetime.datetime.now()
-            save_last_region_activity()
-            print(f"DEBUG: Updated last test at for guild {guild.id} channel {channel_id} region {reg.upper()}")
+            FORCE_save_last_region_activity()  # SAUVEGARDE FORCÉE
+            print(f"FORCE DEBUG: Updated last test at for guild {guild.id} channel {channel_id} region {reg.upper()}")
     except Exception as e:
-        print(f"DEBUG: Failed updating last test at: {e}")
+        print(f"FORCE DEBUG: Failed updating last test at: {e}")
 
     try:
         await rebuild_and_cache_vanilla()
@@ -932,7 +1062,7 @@ class TierSelectView(discord.ui.View):
                     tester=self.tester
                 )
             except Exception as e:
-                print(f"DEBUG: post_tier_results error: {e}")
+                print(f"FORCE DEBUG: post_tier_results error: {e}")
 
         embed = discord.Embed(
             title="Channel Closing",
@@ -985,7 +1115,7 @@ async def global_app_check(interaction: discord.Interaction) -> bool:
 
 @bot.event
 async def on_ready():
-    print(f"{bot.user.name} is online and ready!")
+    print(f"FORCE DEBUG: *** {bot.user.name} IS ONLINE AND READY! ***")
 
     load_authorized_guilds()
 
@@ -993,17 +1123,18 @@ async def on_ready():
         if guild.id not in message_logs:
             message_logs[guild.id] = []
 
-    # Load all persistent data BEFORE doing anything else
-    load_tester_stats()
-    load_user_cooldowns()
-    load_user_info()
-    load_last_region_activity()
+    # CHARGEMENT FORCÉ DE TOUTES LES DONNÉES PERSISTANTES AVANT TOUT
+    print("FORCE DEBUG: *** LOADING ALL PERSISTENT DATA ***")
+    FORCE_load_tester_stats()
+    FORCE_load_user_cooldowns()
+    FORCE_load_user_info()
+    FORCE_load_last_region_activity()
     
     # Debug: Show what was loaded
     total_users_loaded = sum(len(guild_data) for guild_data in user_info.values())
     total_activities_loaded = sum(len(guild_data) for guild_data in last_region_activity.values())
-    print(f"DEBUG: Loaded {total_users_loaded} user_info entries from file")
-    print(f"DEBUG: Loaded activity data for {total_activities_loaded} guilds")
+    print(f"FORCE SUCCESS: *** LOADED {total_users_loaded} USER_INFO ENTRIES ***")
+    print(f"FORCE SUCCESS: *** LOADED ACTIVITY DATA FOR {total_activities_loaded} GUILDS ***")
 
     for g in bot.guilds:
         _ensure_guild_activity_state(g.id)
@@ -1019,30 +1150,30 @@ async def on_ready():
     waitlist_message_ids.clear()
     waitlist_messages.clear()
     active_testing_sessions.clear()
-    print("DEBUG: Cleared queue/tester/waitlist state on startup")
+    print("FORCE DEBUG: Cleared queue/tester/waitlist state on startup")
 
-    # NE PAS réinitialiser les "last test at" - ils sont restaurés depuis le fichier
-    print("DEBUG: Last test at timestamps restored from saved data")
+    # IMPORTANT: NE PAS réinitialiser les "last test at" - ils sont restaurés depuis le fichier
+    print("FORCE SUCCESS: *** Last test at timestamps PRESERVED from saved data ***")
 
     global APP_CHECK_ADDED
     if not APP_CHECK_ADDED:
         try:
             bot.tree.add_check(global_app_check)
             APP_CHECK_ADDED = True
-            print("DEBUG: Registered global app command check")
+            print("FORCE DEBUG: Registered global app command check")
         except Exception as e:
-            print(f"DEBUG: Failed to add global app check: {e}")
+            print(f"FORCE ERROR: Failed to add global app check: {e}")
 
     try:
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} command(s)")
+        print(f"FORCE DEBUG: Synced {len(synced)} command(s)")
 
         if GUILD_ID:
             guild = discord.Object(id=GUILD_ID)
             synced_guild = await bot.tree.sync(guild=guild)
-            print(f"DEBUG: Synced {len(synced_guild)} slash command(s) for guild {GUILD_ID}")
+            print(f"FORCE DEBUG: Synced {len(synced_guild)} slash command(s) for guild {GUILD_ID}")
     except Exception as e:
-        print(f"Failed to sync commands: {e}")
+        print(f"FORCE ERROR: Failed to sync commands: {e}")
 
     newly_added = 0
     for g in bot.guilds:
@@ -1051,20 +1182,20 @@ async def on_ready():
             newly_added += 1
     if newly_added > 0:
         save_authorized_guilds()
-        print(f"DEBUG: Auto-authorized {newly_added} guild(s) on startup")
+        print(f"FORCE DEBUG: Auto-authorized {newly_added} guild(s) on startup")
 
     for guild in bot.guilds:
         if not is_guild_authorized(guild.id):
-            print(f"DEBUG: Skipping setup for unauthorized guild {guild.id}")
+            print(f"FORCE DEBUG: Skipping setup for unauthorized guild {guild.id}")
             continue
 
         request_channel = _get_request_channel(guild)
         if not request_channel:
             try:
                 request_channel = await guild.create_text_channel(REQUEST_CHANNEL_NAME)
-                print(f"DEBUG: Created request channel #{request_channel.name} in {guild.name}")
+                print(f"FORCE DEBUG: Created request channel #{request_channel.name} in {guild.name}")
             except discord.Forbidden:
-                print(f"DEBUG: Missing permission to create request channel in {guild.name}")
+                print(f"FORCE DEBUG: Missing permission to create request channel in {guild.name}")
                 request_channel = None
 
         if request_channel:
@@ -1088,21 +1219,21 @@ async def on_ready():
 
             try:
                 await request_channel.purge(limit=100)
-                print(f"DEBUG: Purged all messages in request-test channel")
+                print(f"FORCE DEBUG: Purged all messages in request-test channel")
             except Exception as e:
-                print(f"DEBUG: Could not purge request-test channel: {e}")
+                print(f"FORCE DEBUG: Could not purge request-test channel: {e}")
 
             await request_channel.send(embed=embed, view=view)
-            print(f"DEBUG: Created single request button in request-test channel")
+            print(f"FORCE DEBUG: Created single request button in request-test channel")
 
         for region in waitlists:
             channel = discord.utils.get(guild.text_channels, name=f"waitlist-{region}")
             if channel:
                 try:
                     await channel.purge(limit=100)
-                    print(f"DEBUG: Purged messages in waitlist-{region}")
+                    print(f"FORCE DEBUG: Purged messages in waitlist-{region}")
                 except Exception as e:
-                    print(f"DEBUG: Could not purge waitlist-{region}: {e}")
+                    print(f"FORCE DEBUG: Could not purge waitlist-{region}: {e}")
 
                 _ensure_guild_queue_state(guild.id)
                 opened_queues[guild.id].discard(region)
@@ -1110,30 +1241,32 @@ async def on_ready():
 
     if not refresh_messages.is_running():
         refresh_messages.start()
-        print("DEBUG: Started refresh_messages task")
+        print("FORCE DEBUG: Started refresh_messages task")
 
     if not cleanup_expired_cooldowns.is_running():
         cleanup_expired_cooldowns.start()
-        print("DEBUG: Started cleanup_expired_cooldowns task")
+        print("FORCE DEBUG: Started cleanup_expired_cooldowns task")
 
-    if not periodic_save_activities.is_running():
-        periodic_save_activities.start()
-        print("DEBUG: Started periodic_save_activities task")
+    if not periodic_FORCE_save_activities.is_running():
+        periodic_FORCE_save_activities.start()
+        print("FORCE DEBUG: Started periodic_FORCE_save_activities task")
 
     try:
         await rebuild_and_cache_vanilla()
     except Exception as e:
-        print(f"DEBUG: initial vanilla rebuild failed: {e}")
+        print(f"FORCE DEBUG: initial vanilla rebuild failed: {e}")
 
     if not refresh_vanilla_export.is_running():
         refresh_vanilla_export.start()
-        print("DEBUG: Started refresh_vanilla_export task")
+        print("FORCE DEBUG: Started refresh_vanilla_export task")
 
     try:
         register_vanilla_callback(_vanilla_payload)
-        print("DEBUG: /vanilla.json exporter registered")
+        print("FORCE DEBUG: /vanilla.json exporter registered")
     except Exception as e:
-        print(f"DEBUG: register_vanilla_callback failed: {e}")
+        print(f"FORCE DEBUG: register_vanilla_callback failed: {e}")
+
+    print("FORCE SUCCESS: *** BOT STARTUP COMPLETE - ALL DATA LOADED! ***")
 
 @bot.event
 async def on_member_update(before: discord.Member, after: discord.Member):
@@ -1148,9 +1281,9 @@ async def on_member_update(before: discord.Member, after: discord.Member):
     if any(is_tier_role_obj(r) for r in (added + removed)):
         try:
             await rebuild_and_cache_vanilla()
-            print(f"DEBUG: Rebuilt vanilla cache due to tier role change for {after} in guild {after.guild.id}")
+            print(f"FORCE DEBUG: Rebuilt vanilla cache due to tier role change for {after} in guild {after.guild.id}")
         except Exception as e:
-            print(f"DEBUG: on_member_update rebuild failed: {e}")
+            print(f"FORCE DEBUG: on_member_update rebuild failed: {e}")
 
 @bot.event
 async def on_guild_join(guild):
@@ -1321,7 +1454,7 @@ async def on_guild_channel_delete(channel):
                 break
         if user_to_remove:
             del active_testing_sessions[user_to_remove]
-            print(f"DEBUG: Cleaned up active testing session for user {user_to_remove} (channel deleted)")
+            print(f"FORCE DEBUG: Cleaned up active testing session for user {user_to_remove} (channel deleted)")
 
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
@@ -1532,7 +1665,7 @@ async def removecooldown(interaction: discord.Interaction, member: discord.Membe
     if had_cooldown:
         try:
             del user_test_cooldowns[member.id]
-            save_user_cooldowns()
+            FORCE_save_user_cooldowns()  # SAUVEGARDE FORCÉE
         except Exception:
             pass
 
@@ -1563,7 +1696,7 @@ async def remove(interaction: discord.Interaction, member: discord.Member):
     if had_cooldown:
         try:
             del user_test_cooldowns[member.id]
-            save_user_cooldowns()
+            FORCE_save_user_cooldowns()  # SAUVEGARDE FORCÉE
         except Exception:
             pass
 
@@ -1642,15 +1775,15 @@ async def startqueue(interaction: discord.Interaction, channel: discord.TextChan
                 waitlists[region].remove(uid)
             except ValueError:
                 pass
-        print(f"DEBUG: Cleared {cleared_count} users from {region} waitlist in guild {interaction.guild.id}")
+        print(f"FORCE DEBUG: Cleared {cleared_count} users from {region} waitlist in guild {interaction.guild.id}")
 
     _ensure_guild_queue_state(interaction.guild.id)
     opened_queues[interaction.guild.id].add(region)
 
     _ensure_guild_activity_state(interaction.guild.id, channel.id)
     last_region_activity[interaction.guild.id][channel.id][region] = datetime.datetime.now()
-    save_last_region_activity()
-    print(f"DEBUG: Updated and saved last activity for guild {interaction.guild.id} channel {channel.id} {region.upper()}")
+    FORCE_save_last_region_activity()  # SAUVEGARDE FORCÉE
+    print(f"FORCE DEBUG: Updated and saved last activity for guild {interaction.guild.id} channel {channel.id} {region.upper()}")
 
     if interaction.user.id not in active_testers[interaction.guild.id][region]:
         active_testers[interaction.guild.id][region].append(interaction.user.id)
@@ -1704,8 +1837,8 @@ async def stopqueue(interaction: discord.Interaction, channel: discord.TextChann
             opened_queues[interaction.guild.id].discard(region)
             _ensure_guild_activity_state(interaction.guild.id, channel.id)
             last_region_activity[interaction.guild.id][channel.id][region] = datetime.datetime.now()
-            save_last_region_activity()
-            print(f"DEBUG: Updated last test at for guild {interaction.guild.id} channel {channel.id} region {region.upper()} when queue closed")
+            FORCE_save_last_region_activity()  # SAUVEGARDE FORCÉE
+            print(f"FORCE DEBUG: Updated last test at for guild {interaction.guild.id} channel {channel.id} region {region.upper()} when queue closed")
 
         await interaction.response.send_message(
             embed=discord.Embed(
@@ -2125,9 +2258,9 @@ async def passeval(interaction: discord.Interaction):
                     name=high_eval_category_name,
                     reason=f"Created for high eval channels in {region} region"
                 )
-                print(f"DEBUG: Created new category: {high_eval_category_name}")
+                print(f"FORCE DEBUG: Created new category: {high_eval_category_name}")
             except Exception as e:
-                print(f"DEBUG: Failed to create category {high_eval_category_name}: {e}")
+                print(f"FORCE DEBUG: Failed to create category {high_eval_category_name}: {e}")
                 high_eval_category = None
         
         # Edit channel name and move to high eval category
@@ -2136,10 +2269,10 @@ async def passeval(interaction: discord.Interaction):
             category=high_eval_category,
             reason=f"Player {player.display_name} passed eval - moved to {high_eval_category_name}"
         )
-        print(f"DEBUG: Moved channel {new_channel_name} to category {high_eval_category_name}")
+        print(f"FORCE DEBUG: Moved channel {new_channel_name} to category {high_eval_category_name}")
         
     except Exception as e:
-        print(f"DEBUG: Failed to rename/move channel: {e}")
+        print(f"FORCE DEBUG: Failed to rename/move channel: {e}")
         # Continue even if renaming/moving fails
 
     # Get player info
@@ -2220,7 +2353,7 @@ async def close(interaction: discord.Interaction):
         sessions_to_remove = [uid for uid, cid in active_testing_sessions.items() if cid == ch.id]
         for uid in sessions_to_remove:
             del active_testing_sessions[uid]
-            print(f"DEBUG: Cleaned up session for user {uid} in channel {ch.id}")
+            print(f"FORCE DEBUG: Cleaned up session for user {uid} in channel {ch.id}")
     except Exception:
         pass
 
@@ -2405,8 +2538,8 @@ class WaitlistModal(discord.ui.Modal):
                 return
             else:
                 del user_test_cooldowns[user_id]
-                save_user_cooldowns()
-                print(f"DEBUG: Removed expired cooldown for user {user_id}")
+                FORCE_save_user_cooldowns()  # SAUVEGARDE FORCÉE
+                print(f"FORCE DEBUG: Removed expired cooldown for user {user_id}")
 
         if user_id in active_testing_sessions:
             existing_channel_id = active_testing_sessions[user_id]
@@ -2428,15 +2561,22 @@ class WaitlistModal(discord.ui.Modal):
 
         guild_id = interaction.guild.id
         _ensure_guild_user_info(guild_id)
+        
+        # *** SAUVEGARDE FORCÉE DU FORMULAIRE ***
+        print(f"FORCE DEBUG: *** SAVING FORM DATA FOR USER {user_id} ***")
         user_info[guild_id][user_id] = {
             "ign": self.minecraft_ign.value,
             "server": self.minecraft_server.value,
             "region": region_input.upper(),
             "updated_at": datetime.datetime.now().isoformat()
         }
-        print(f"DEBUG: Saving form data for user {user_id} in guild {guild_id}: {user_info[guild_id][user_id]}")
-        save_user_info()  # SAUVEGARDE IMMÉDIATE
-        print(f"DEBUG: Form saved successfully for user {user_id}")
+        print(f"FORCE DEBUG: Form data to save: {user_info[guild_id][user_id]}")
+        
+        # TRIPLE SAUVEGARDE POUR ÊTRE SÛR
+        FORCE_save_user_info()
+        FORCE_save_user_info()
+        FORCE_save_user_info()
+        print(f"FORCE SUCCESS: *** FORM SAVED 3 TIMES FOR USER {user_id} ***")
 
         waitlist_role = discord.utils.get(
             interaction.guild.roles,
@@ -2614,7 +2754,7 @@ async def update_waitlist_message(guild: discord.Guild, region: str):
             guild_msg_ids[region] = new_message.id
 
     except Exception as e:
-        print(f"DEBUG: Error in update_waitlist_message for {region} in guild {guild.id}: {e}")
+        print(f"FORCE DEBUG: Error in update_waitlist_message for {region} in guild {guild.id}: {e}")
 
 async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str, position: int):
     if not is_guild_authorized(getattr(guild, "id", None)):
@@ -2647,7 +2787,7 @@ async def log_queue_join(guild: discord.Guild, user: discord.Member, region: str
         else:
             await logs_channel.send(embed=embed)
     except Exception as e:
-        print(f"DEBUG: Error logging queue join: {e}")
+        print(f"FORCE DEBUG: Error logging queue join: {e}")
 
 async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
     if not is_guild_authorized(getattr(guild, "id", None)):
@@ -2679,11 +2819,11 @@ async def maybe_notify_queue_top_change(guild: discord.Guild, region: str):
         )
         embed.set_author(name=get_brand_name(guild), icon_url=get_brand_logo_url(guild))
         await member.send(embed=embed)
-        print(f"DEBUG: Sent 'Queue Position Updated' DM to {member.name} for {region.upper()} region (guild {guild.id})")
+        print(f"FORCE DEBUG: Sent 'Queue Position Updated' DM to {member.name} for {region.upper()} region (guild {guild.id})")
     except discord.Forbidden:
-        print(f"DEBUG: Could not DM {member} (privacy settings)")
+        print(f"FORCE DEBUG: Could not DM {member} (privacy settings)")
     except Exception as e:
-        print(f"DEBUG: Error sending top-of-queue DM: {e}")
+        print(f"FORCE DEBUG: Error sending top-of-queue DM: {e}")
 
 async def notify_first_in_queue(guild: discord.Guild, region: str, tester: discord.Member):
     await maybe_notify_queue_top_change(guild, region)
@@ -2709,7 +2849,7 @@ async def send_eval_welcome_message(channel: discord.TextChannel, region: str, p
         )
         await channel.send(embed=info_embed)
     except Exception as e:
-        print(f"DEBUG: Failed to send welcome message in {channel.id}: {e}")
+        print(f"FORCE DEBUG: Failed to send welcome message in {channel.id}: {e}")
 
 async def create_initial_waitlist_message(guild: discord.Guild, region: str):
     if not is_guild_authorized(getattr(guild, "id", None)):
@@ -2755,7 +2895,7 @@ async def create_initial_waitlist_message(guild: discord.Guild, region: str):
         waitlist_message_ids[guild.id][region] = initial_message.id
 
     except Exception as e:
-        print(f"DEBUG: Error creating initial message for {region} in guild {guild.id}: {e}")
+        print(f"FORCE DEBUG: Error creating initial message for {region} in guild {guild.id}: {e}")
 
 def _display_name_or_ign(user_id: int, guild: discord.Guild) -> str:
     try:
@@ -2793,9 +2933,9 @@ async def update_leaderboard(guild: discord.Guild):
         else:
             await channel.send(embed=embed)
     except Exception as e:
-        print(f"DEBUG: update_leaderboard error: {e}")
+        print(f"FORCE DEBUG: update_leaderboard error: {e}")
 
-# === TASKS ===
+# === TASKS RENFORCÉES ===
 
 @tasks.loop(minutes=1)
 async def refresh_messages():
@@ -2808,7 +2948,7 @@ async def refresh_messages():
             try:
                 await update_waitlist_message(guild, region)
             except Exception as e:
-                print(f"DEBUG: Error refreshing waitlist message for {region}: {e}")
+                print(f"FORCE DEBUG: Error refreshing waitlist message for {region}: {e}")
 
 @tasks.loop(hours=1)
 async def cleanup_expired_cooldowns():
@@ -2817,14 +2957,18 @@ async def cleanup_expired_cooldowns():
     if expired_users:
         for user_id in expired_users:
             del user_test_cooldowns[user_id]
-        save_user_cooldowns()
-        print(f"DEBUG: Cleaned up {len(expired_users)} expired cooldowns")
+        FORCE_save_user_cooldowns()  # SAUVEGARDE FORCÉE
+        print(f"FORCE DEBUG: Cleaned up {len(expired_users)} expired cooldowns")
 
-@tasks.loop(minutes=30)
-async def periodic_save_activities():
-    save_last_region_activity()
-    save_user_info()  # SAUVEGARDE PÉRIODIQUE DES FORMULAIRES
-    print("DEBUG: Periodic save of last region activities and user_info completed")
+@tasks.loop(minutes=5)  # RÉDUIT À 5 MINUTES POUR PLUS DE FRÉQUENCE
+async def periodic_FORCE_save_activities():
+    """SAUVEGARDE FORCÉE TOUTES LES 5 MINUTES"""
+    print("FORCE DEBUG: *** PERFORMING PERIODIC FORCED SAVE ***")
+    FORCE_save_last_region_activity()
+    FORCE_save_user_info()
+    FORCE_save_user_cooldowns()
+    FORCE_save_tester_stats()
+    print("FORCE SUCCESS: *** PERIODIC FORCED SAVE COMPLETED ***")
 
 # === RUN BOT ===
 
@@ -2835,4 +2979,5 @@ if __name__ == "__main__":
         keep_alive()
     except Exception:
         pass
+    print("FORCE DEBUG: *** STARTING BOT WITH FORCED SAVE SYSTEM ***")
     run_with_backoff()
