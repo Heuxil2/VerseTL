@@ -905,7 +905,7 @@ async def post_tier_results(interaction: discord.Interaction, user: discord.Memb
         color=embed_color
     )
 
-    title_prefix = f"**{user.name}'s Test Results 🏆**" if is_high_result else f"**{user.name}'s Test Results 🏆**"
+    title_prefix = f"{user.name}'s Test Results 🏆" if is_high_result else f"{user.name}'s Test Results 🏆"
     embed.description = (
         f"{title_prefix}\n\n"
         f"**Tester:**\n{tester.mention}\n"
