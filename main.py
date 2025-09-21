@@ -550,54 +550,71 @@ def save_last_region_activity():
 def load_last_region_activity():
     global last_region_activity
     try:
-        last_region_activity = {}
+        last_region_activity = {}  # Reset first
         if os.path.exists(LAST_ACTIVITY_FILE):
+            print(f"DEBUG: Loading last region activity from {LAST_ACTIVITY_FILE}...")
             with open(LAST_ACTIVITY_FILE, 'r', encoding='utf-8') as f:
                 loaded = json.load(f)
+            print(f"DEBUG: Activity file contains {len(loaded)} guild entries")
+            
             for gid_str, channels in loaded.items():
                 try:
                     gid = int(gid_str)
-                except Exception:
+                except Exception as e:
+                    print(f"DEBUG: Error parsing guild ID {gid_str}: {e}")
                     continue
+                    
                 last_region_activity[gid] = {}
+                print(f"DEBUG: Processing guild {gid} with {len(channels)} channel entries")
                 
                 # Support both old format (direct regions) and new format (channels)
-                if isinstance(list(channels.values())[0] if channels else {}, dict) and any(isinstance(v, dict) for v in channels.values()):
+                if channels and isinstance(list(channels.values())[0], dict) and any(isinstance(v, dict) for v in channels.values()):
                     # New format: {guild_id: {channel_id: {region: datetime}}}
+                    print(f"DEBUG: Using new format for guild {gid}")
                     for channel_id_str, regions in channels.items():
                         try:
                             channel_id = int(channel_id_str)
-                        except Exception:
+                        except Exception as e:
+                            print(f"DEBUG: Error parsing channel ID {channel_id_str}: {e}")
                             continue
                         last_region_activity[gid][channel_id] = {"na": None, "eu": None, "as": None, "au": None}
                         for region in ["na", "eu", "as", "au"]:
                             val = regions.get(region)
                             if val:
                                 try:
-                                    last_region_activity[gid][channel_id][region] = datetime.datetime.fromisoformat(val)
-                                    time_ago = datetime.datetime.now() - last_region_activity[gid][channel_id][region]
+                                    parsed_time = datetime.datetime.fromisoformat(val)
+                                    last_region_activity[gid][channel_id][region] = parsed_time
+                                    time_ago = datetime.datetime.now() - parsed_time
                                     print(f"DEBUG: Restored last activity for guild {gid} channel {channel_id} {region.upper()}: {time_ago.days} days ago")
                                 except (ValueError, TypeError) as e:
-                                    print(f"DEBUG: Error parsing last activity for guild {gid} channel {channel_id} {region}: {e}")
+                                    print(f"DEBUG: Error parsing datetime {val} for guild {gid} channel {channel_id} {region}: {e}")
                                     last_region_activity[gid][channel_id][region] = None
                 else:
-                    # Old format compatibility: {guild_id: {region: datetime}} - create a default channel entry
+                    # Old format compatibility: {guild_id: {region: datetime}}
+                    print(f"DEBUG: Using old format compatibility for guild {gid}")
                     default_channel_id = 0  # Use 0 as default for backward compatibility
                     last_region_activity[gid][default_channel_id] = {"na": None, "eu": None, "as": None, "au": None}
                     for region in ["na", "eu", "as", "au"]:
                         val = channels.get(region)
                         if val:
                             try:
-                                last_region_activity[gid][default_channel_id][region] = datetime.datetime.fromisoformat(val)
-                                time_ago = datetime.datetime.now() - last_region_activity[gid][default_channel_id][region]
+                                parsed_time = datetime.datetime.fromisoformat(val)
+                                last_region_activity[gid][default_channel_id][region] = parsed_time
+                                time_ago = datetime.datetime.now() - parsed_time
                                 print(f"DEBUG: Migrated last activity for guild {gid} {region.upper()}: {time_ago.days} days ago")
                             except (ValueError, TypeError) as e:
-                                print(f"DEBUG: Error parsing last activity for guild {gid} {region}: {e}")
+                                print(f"DEBUG: Error parsing datetime {val} for guild {gid} {region}: {e}")
                                 last_region_activity[gid][default_channel_id][region] = None
+            
+            total_guilds = len(last_region_activity)
+            total_activities = sum(len(guild_data) for guild_data in last_region_activity.values())
+            print(f"DEBUG: Successfully loaded activity data for {total_guilds} guilds with {total_activities} total channel entries")
         else:
-            print(f"DEBUG: No existing last activity file found, starting fresh")
+            print(f"DEBUG: No existing last activity file found at {LAST_ACTIVITY_FILE}, starting fresh")
     except Exception as e:
         print(f"DEBUG: Error loading last region activities: {e}")
+        import traceback
+        traceback.print_exc()
         last_region_activity = {}
 
 def get_sheets_service():
@@ -632,23 +649,36 @@ def save_user_info():
 def load_user_info():
     global user_info
     try:
+        user_info = {}  # Reset first
         if os.path.exists(USER_INFO_FILE):
+            print(f"DEBUG: Loading user_info from {USER_INFO_FILE}...")
             with open(USER_INFO_FILE, "r", encoding="utf-8") as f:
                 raw = json.load(f)
-            user_info = {}
+            print(f"DEBUG: Raw file contains {len(raw)} guild entries")
+            
             for guild_id_str, guild_data in raw.items():
                 try:
                     guild_id = int(guild_id_str)
-                    user_info[guild_id] = {int(uid): data for uid, data in guild_data.items()}
-                except (ValueError, TypeError):
-                    continue
+                    user_info[guild_id] = {}
+                    for uid_str, data in guild_data.items():
+                        try:
+                            uid = int(uid_str)
+                            user_info[guild_id][uid] = data
+                            print(f"DEBUG: Loaded user {uid} data: {data}")
+                        except (ValueError, TypeError) as e:
+                            print(f"DEBUG: Error parsing user {uid_str}: {e}")
+                    print(f"DEBUG: Guild {guild_id} loaded with {len(user_info[guild_id])} users")
+                except (ValueError, TypeError) as e:
+                    print(f"DEBUG: Error parsing guild {guild_id_str}: {e}")
+                    
             total_users = sum(len(guild_data) for guild_data in user_info.values())
-            print(f"DEBUG: Loaded {total_users} user_info entries across {len(user_info)} guilds from {USER_INFO_FILE}")
+            print(f"DEBUG: Successfully loaded {total_users} user_info entries across {len(user_info)} guilds")
         else:
-            print("DEBUG: No user_info file found, starting fresh")
-            user_info = {}
+            print(f"DEBUG: No user_info file found at {USER_INFO_FILE}, starting fresh")
     except Exception as e:
         print(f"DEBUG: Error loading user_info: {e}")
+        import traceback
+        traceback.print_exc()
         user_info = {}
 
 async def add_ign_to_sheet(ign: str, tier: str):
@@ -963,10 +993,17 @@ async def on_ready():
         if guild.id not in message_logs:
             message_logs[guild.id] = []
 
+    # Load all persistent data BEFORE doing anything else
     load_tester_stats()
     load_user_cooldowns()
     load_user_info()
     load_last_region_activity()
+    
+    # Debug: Show what was loaded
+    total_users_loaded = sum(len(guild_data) for guild_data in user_info.values())
+    total_activities_loaded = sum(len(guild_data) for guild_data in last_region_activity.values())
+    print(f"DEBUG: Loaded {total_users_loaded} user_info entries from file")
+    print(f"DEBUG: Loaded activity data for {total_activities_loaded} guilds")
 
     for g in bot.guilds:
         _ensure_guild_activity_state(g.id)
@@ -2397,7 +2434,9 @@ class WaitlistModal(discord.ui.Modal):
             "region": region_input.upper(),
             "updated_at": datetime.datetime.now().isoformat()
         }
+        print(f"DEBUG: Saving form data for user {user_id} in guild {guild_id}: {user_info[guild_id][user_id]}")
         save_user_info()  # SAUVEGARDE IMMÉDIATE
+        print(f"DEBUG: Form saved successfully for user {user_id}")
 
         waitlist_role = discord.utils.get(
             interaction.guild.roles,
