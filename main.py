@@ -2315,18 +2315,41 @@ async def passeval(interaction: discord.Interaction):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="close", description="Close an eval channel (Tester role required)")
-async def close(interaction: discord.Interaction):
+@bot.tree.command(name="close", description="Close an eval channel with tier results (Tester role required)")
+@app_commands.describe(
+    user="The user who took the test",
+    ign="Minecraft IGN of the player (optional - will use registered IGN if not provided)",
+    region="Region where the test was taken",
+    gamemode="Game mode tested",
+    current_rank="Current rank before the test",
+    earned_rank="Rank earned from the test"
+)
+@app_commands.choices(
+    region=[app_commands.Choice(name=n, value=n) for n in ["NA","EU","AS","AU"]],
+    gamemode=[app_commands.Choice(name="Crystal", value="Crystal")],
+    current_rank=[app_commands.Choice(name=n, value=n) for n in ["N/A","HT1","LT1","HT2","LT2","HT3","LT3","HT4","LT4","HT5","LT5"]],
+    earned_rank=[app_commands.Choice(name=n, value=n) for n in ["HT1","LT1","HT2","LT2","HT3","LT3","HT4","LT4","HT5","LT5","Only Close"]]
+)
+async def close(interaction: discord.Interaction, user: discord.Member, region: str, gamemode: str, 
+                current_rank: str, earned_rank: str, ign: str = None):
     if not is_guild_authorized(getattr(interaction.guild, "id", None)):
         return
     if not has_tester_role(interaction.user):
-        embed = discord.Embed(title="Tester Role Required", description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", color=discord.Color(15880807))
+        embed = discord.Embed(
+            title="Tester Role Required", 
+            description="You must have a Tester role to use this command.\nAccepted roles: Tester, Verified Tester, Staff Tester", 
+            color=discord.Color(15880807)
+        )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     ch = interaction.channel
     if not isinstance(ch, discord.TextChannel):
-        embed = discord.Embed(title="Wrong Channel", description="This command can only be used in text channels.", color=discord.Color(15880807))
+        embed = discord.Embed(
+            title="Wrong Channel", 
+            description="This command can only be used in text channels.", 
+            color=discord.Color(15880807)
+        )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -2338,28 +2361,75 @@ async def close(interaction: discord.Interaction):
         "eval" in channel_name_lower
     )
     if not is_eval_channel:
-        embed = discord.Embed(title="Wrong Channel", description="This command can only be used in eval channels.", color=discord.Color(15880807))
+        embed = discord.Embed(
+            title="Wrong Channel", 
+            description="This command can only be used in eval channels.", 
+            color=discord.Color(15880807)
+        )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
+    # Si "Only Close" est sélectionné, fermer sans poster de résultats
+    if earned_rank == "Only Close":
+        embed = discord.Embed(
+            title="Channel Closing",
+            description="This channel will be closed in 5 seconds…",
+            color=discord.Color(15880807)
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        try:
+            if user.id in active_testing_sessions:
+                del active_testing_sessions[user.id]
+        except Exception:
+            pass
+        
+        await asyncio.sleep(5)
+        try:
+            await ch.delete(reason=f"Eval closed without results by {interaction.user.name}")
+        except Exception:
+            pass
+        return
+
+    # Sinon, poster les résultats
+    # Utiliser l'IGN enregistré si non fourni
+    if not ign:
+        guild_id = interaction.guild.id
+        _ensure_guild_user_info(guild_id)
+        data = user_info[guild_id].get(user.id, {})
+        ign = data.get("ign", user.display_name)
+
+    try:
+        await post_tier_results(
+            interaction=interaction,
+            user=user,
+            ign=ign,
+            region=region,
+            gamemode=gamemode,
+            current_rank=current_rank,
+            earned_rank=earned_rank,
+            tester=interaction.user
+        )
+    except Exception as e:
+        print(f"FORCE DEBUG: post_tier_results error: {e}")
+
+    # Message de confirmation
     embed = discord.Embed(
         title="Channel Closing",
-        description="This channel will be closed in 5 seconds…",
+        description=f"Results posted for {earned_rank}.\nThis channel will be deleted in 5 seconds…",
         color=discord.Color(15880807)
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
     try:
-        sessions_to_remove = [uid for uid, cid in active_testing_sessions.items() if cid == ch.id]
-        for uid in sessions_to_remove:
-            del active_testing_sessions[uid]
-            print(f"FORCE DEBUG: Cleaned up session for user {uid} in channel {ch.id}")
+        if user.id in active_testing_sessions:
+            del active_testing_sessions[user.id]
     except Exception:
         pass
 
     await asyncio.sleep(5)
     try:
-        await ch.delete(reason=f"Eval closed by {interaction.user.name}")
+        await ch.delete(reason=f"Eval closed with tier {earned_rank} by {interaction.user.name}")
     except Exception:
         pass
 
