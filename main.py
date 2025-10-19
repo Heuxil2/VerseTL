@@ -1500,7 +1500,7 @@ async def on_interaction(interaction: discord.Interaction):
                     guild_id = interaction.guild.id
                     _ensure_guild_user_info(guild_id)
                     if user_id not in user_info[guild_id]:
-                        embed = discord.Embed(title="Form Required", description="You must submit the form in the <#1407100169467727982> before joining the queue.", color=discord.Color(15880807))
+                        embed = discord.Embed(title="Form Required", description="You must submit the form in the <#1427688962306211921> before joining the queue.", color=discord.Color(15880807))
                         await interaction.response.send_message(embed=embed, ephemeral=True)
                         return
 
