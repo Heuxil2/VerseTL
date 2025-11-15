@@ -194,6 +194,16 @@ async def verify_roles(ctx):
 
 @bot.command()
 @commands.has_permissions(administrator=True)
+async def sync(ctx):
+    """Sync slash commands"""
+    try:
+        synced = await bot.tree.sync()
+        await ctx.send(f'Synced {len(synced)} command(s)!')
+    except Exception as e:
+        await ctx.send(f'Failed to sync: {e}')
+
+@bot.command()
+@commands.has_permissions(administrator=True)
 async def info(ctx):
     """Displays bot information"""
     embed = discord.Embed(
