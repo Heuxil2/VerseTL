@@ -4,10 +4,10 @@ from discord import app_commands
 import os
 
 # Configuration
-TOKEN = os.getenv('DISCORD_TOKEN')
+TOKEN = os.getenv('TOKEN')
 
 if not TOKEN:
-    raise ValueError("DISCORD_TOKEN environment variable is not set!")
+    raise ValueError("TOKEN environment variable is not set!")
 
 # IDs of required roles
 REQUIRED_ROLES = [
