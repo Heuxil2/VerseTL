@@ -1,9 +1,13 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import os
 
 # Configuration
-TOKEN = os.environ.get('DISCORD_TOKEN')  # Token from Render environment variable
+TOKEN = os.getenv('DISCORD_TOKEN')
+
+if not TOKEN:
+    raise ValueError("DISCORD_TOKEN environment variable is not set!")
 
 # IDs of required roles
 REQUIRED_ROLES = [
@@ -30,6 +34,7 @@ ROLE_TO_ADD = 1419413367222960148
 intents = discord.Intents.default()
 intents.members = True
 intents.guilds = True
+intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
@@ -37,6 +42,11 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 async def on_ready():
     print(f'{bot.user} is connected!')
     print(f'Bot ready to add role {ROLE_TO_ADD}')
+    try:
+        synced = await bot.tree.sync()
+        print(f'Synced {len(synced)} slash command(s)')
+    except Exception as e:
+        print(f'Failed to sync commands: {e}')
 
 @bot.event
 async def on_member_update(before, after):
@@ -61,6 +71,55 @@ async def on_member_update(before, after):
                         print(f'Error: {e}')
                 break
 
+@bot.tree.command(name="execute", description="Execute the bot function to add roles to eligible members")
+@app_commands.checks.has_permissions(administrator=True)
+async def execute(interaction: discord.Interaction):
+    """Slash command to check and add the role to all eligible members"""
+    await interaction.response.defer()
+    
+    role_to_give = interaction.guild.get_role(ROLE_TO_ADD)
+    
+    if not role_to_give:
+        await interaction.followup.send("The role to add does not exist!")
+        return
+    
+    count = 0
+    errors = 0
+    
+    for member in interaction.guild.members:
+        # Check if the member has at least one of the required roles
+        member_role_ids = [role.id for role in member.roles]
+        has_required_role = any(role_id in REQUIRED_ROLES for role_id in member_role_ids)
+        
+        if has_required_role and role_to_give not in member.roles:
+            try:
+                await member.add_roles(role_to_give)
+                count += 1
+            except Exception as e:
+                errors += 1
+                print(f'Error for {member.name}: {e}')
+    
+    result_message = f'Role added to {count} member(s)!'
+    if errors > 0:
+        result_message += f'\n{errors} error(s) occurred.'
+    
+    await interaction.followup.send(result_message)
+
+@bot.tree.command(name="info", description="Display bot information")
+async def info_slash(interaction: discord.Interaction):
+    """Slash command to display bot information"""
+    embed = discord.Embed(
+        title="Bot Information",
+        description="Automatic role assignment bot",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="Monitored roles", value=f"{len(REQUIRED_ROLES)} roles", inline=True)
+    embed.add_field(name="Role to add", value=f"<@&{ROLE_TO_ADD}>", inline=True)
+    embed.add_field(name="Commands", value="`/execute` - Check all members and add role\n`/info` - Display this information", inline=False)
+    
+    await interaction.response.send_message(embed=embed)
+
+# Prefix commands (kept for compatibility)
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def verify_roles(ctx):
@@ -97,9 +156,23 @@ async def info(ctx):
     )
     embed.add_field(name="Monitored roles", value=f"{len(REQUIRED_ROLES)} roles", inline=True)
     embed.add_field(name="Role to add", value=f"<@&{ROLE_TO_ADD}>", inline=True)
-    embed.add_field(name="Commands", value="`!verify_roles` - Check all members\n`!info` - Display this information", inline=False)
+    embed.add_field(name="Commands", value="`!verify_roles` - Check all members\n`!info` - Display this information\n`/execute` - Slash command to check all members\n`/info` - Slash command for info", inline=False)
     
     await ctx.send(embed=embed)
 
+# Error handling for slash commands
+@execute.error
+async def execute_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message("You need administrator permissions to use this command!", ephemeral=True)
+
+@info_slash.error
+async def info_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    await interaction.response.send_message("An error occurred!", ephemeral=True)
+
 # Start the bot
-bot.run(TOKEN)
+try:
+    bot.run(TOKEN)
+except Exception as e:
+    print(f'Failed to start bot: {e}')
+    raise
