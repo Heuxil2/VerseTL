@@ -42,6 +42,12 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 async def on_ready():
     print(f'{bot.user} is connected!')
     print(f'Bot ready to add role {ROLE_TO_ADD}')
+    
+    # Set bot status and activity
+    activity = discord.Game(name="gg/vanilatiers")
+    await bot.change_presence(status=discord.Status.online, activity=activity)
+    print('Status set to: gg/vanilatiers')
+    
     try:
         synced = await bot.tree.sync()
         print(f'Synced {len(synced)} slash command(s)')
@@ -70,6 +76,47 @@ async def on_member_update(before, after):
                     except Exception as e:
                         print(f'Error: {e}')
                 break
+
+@bot.tree.command(name="staffmovement", description="Announce a staff position change")
+@app_commands.describe(
+    user="The user who is changing position",
+    old_position="Their previous role",
+    new_position="Their new role",
+    reason="Optional reason for the change"
+)
+@app_commands.checks.has_permissions(administrator=True)
+async def staffmovement(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    old_position: discord.Role,
+    new_position: discord.Role,
+    reason: str = None
+):
+    """Announce a staff position change"""
+    channel_id = 1407097377852096563
+    ping_role_id = 1419360838208192542
+    
+    channel = interaction.guild.get_channel(channel_id)
+    
+    if not channel:
+        await interaction.response.send_message("Channel not found!", ephemeral=True)
+        return
+    
+    # Build the message
+    message = f"{user.mention} **{old_position.name}** → **{new_position.name}**"
+    
+    if reason:
+        message += f"\n**Reason:** {reason}"
+    
+    message += f"\n||<@&{ping_role_id}>||"
+    
+    try:
+        await channel.send(message)
+        await interaction.response.send_message(f"Staff movement announced for {user.mention}!", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message("I don't have permission to send messages in that channel!", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
 
 @bot.tree.command(name="execute", description="Execute the bot function to add roles to eligible members")
 @app_commands.checks.has_permissions(administrator=True)
@@ -161,6 +208,13 @@ async def info(ctx):
     await ctx.send(embed=embed)
 
 # Error handling for slash commands
+@staffmovement.error
+async def staffmovement_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message("You need administrator permissions to use this command!", ephemeral=True)
+    else:
+        await interaction.response.send_message("An error occurred!", ephemeral=True)
+
 @execute.error
 async def execute_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingPermissions):
