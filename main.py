@@ -33,7 +33,7 @@ REQUIRED_ROLES = [
 ROLE_TO_ADD = 1441986636140380327
 
 # ID of the role that can use commands
-COMMAND_ROLE_ID = 1441986636182323306
+COMMAND_ROLE_ID = 1441986636182323302
 
 # IDs of roles that can use format command
 FORMAT_COMMAND_ROLES = [
@@ -242,14 +242,27 @@ async def execute(interaction: discord.Interaction):
     count = 0
     errors = 0
     error_details = []
+    eligible_count = 0
+    
+    # Send initial status
+    await interaction.followup.send("⏳ Fetching all members... This may take a moment.")
     
     # Fetch all members to ensure we have up-to-date data
     try:
-        await interaction.guild.chunk()
+        members = []
+        async for member in interaction.guild.fetch_members(limit=None):
+            members.append(member)
+        print(f"Fetched {len(members)} members from guild")
     except Exception as e:
-        print(f"Error chunking guild: {e}")
+        print(f"Error fetching members: {e}")
+        members = interaction.guild.members
+        print(f"Using cached members: {len(members)}")
     
-    for member in interaction.guild.members:
+    # Debug: Check required roles
+    print(f"Required role IDs: {REQUIRED_ROLES}")
+    print(f"Role to add ID: {ROLE_TO_ADD}")
+    
+    for member in members:
         # Skip bots
         if member.bot:
             continue
@@ -258,34 +271,44 @@ async def execute(interaction: discord.Interaction):
         member_role_ids = [role.id for role in member.roles]
         has_required_role = any(role_id in REQUIRED_ROLES for role_id in member_role_ids)
         
-        if has_required_role and role_to_give not in member.roles:
-            try:
-                await member.add_roles(role_to_give, reason="Automatic role assignment via /execute")
-                count += 1
-                print(f'Role added to {member.name}')
-            except discord.Forbidden:
-                errors += 1
-                error_details.append(f"{member.name}: Permission denied")
-                print(f'Permission denied for {member.name}')
-            except discord.HTTPException as e:
-                errors += 1
-                error_details.append(f"{member.name}: {str(e)}")
-                print(f'HTTP error for {member.name}: {e}')
-            except Exception as e:
-                errors += 1
-                error_details.append(f"{member.name}: {str(e)}")
-                print(f'Error for {member.name}: {e}')
+        if has_required_role:
+            eligible_count += 1
+            print(f"{member.name} is eligible (has required role)")
+            
+            if role_to_give not in member.roles:
+                print(f"Attempting to add role to {member.name}")
+                try:
+                    await member.add_roles(role_to_give, reason="Automatic role assignment via /execute")
+                    count += 1
+                    print(f'✅ Role added to {member.name}')
+                except discord.Forbidden:
+                    errors += 1
+                    error_details.append(f"{member.name}: Permission denied")
+                    print(f'❌ Permission denied for {member.name}')
+                except discord.HTTPException as e:
+                    errors += 1
+                    error_details.append(f"{member.name}: {str(e)}")
+                    print(f'❌ HTTP error for {member.name}: {e}')
+                except Exception as e:
+                    errors += 1
+                    error_details.append(f"{member.name}: {str(e)}")
+                    print(f'❌ Error for {member.name}: {e}')
+            else:
+                print(f"{member.name} already has the role")
     
     # Build result message
-    result_message = f'Role added to **{count}** member(s)!'
-    if errors > 0:
-        result_message += f'\n**{errors}** error(s) occurred.'
-        if error_details and len(error_details) <= 5:
-            result_message += "\n\n**Errors:**\n" + "\n".join(error_details[:5])
-        elif error_details:
-            result_message += f"\n\n**First 5 errors:**\n" + "\n".join(error_details[:5])
+    result_message = f'✅ **Scan Complete!**\n\n'
+    result_message += f'👥 Eligible members found: **{eligible_count}**\n'
+    result_message += f'➕ Role added to: **{count}** member(s)\n'
     
-    await interaction.followup.send(result_message)
+    if errors > 0:
+        result_message += f'\n❌ **{errors}** error(s) occurred.'
+        if error_details and len(error_details) <= 10:
+            result_message += "\n\n**Errors:**\n" + "\n".join(error_details[:10])
+        elif error_details:
+            result_message += f"\n\n**First 10 errors:**\n" + "\n".join(error_details[:10])
+    
+    await interaction.edit_original_response(content=result_message)
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -337,7 +360,7 @@ async def format_slash(interaction: discord.Interaction):
     valid_tiers = ['ht1', 'lt1', 'ht2', 'lt2', 'ht3']
     if tier not in valid_tiers:
         await interaction.response.send_message(
-            f"Invalid tier: `{tier}`\n"
+            f"❌ Invalid tier: `{tier}`\n"
             f"Valid tiers: {', '.join(valid_tiers)}",
             ephemeral=True
         )
@@ -347,7 +370,7 @@ async def format_slash(interaction: discord.Interaction):
     valid_regions = ['na', 'eu', 'as']
     if region not in valid_regions:
         await interaction.response.send_message(
-            f"Invalid region: `{region}`\n"
+            f"❌ Invalid region: `{region}`\n"
             f"Valid regions: {', '.join(valid_regions)}",
             ephemeral=True
         )
@@ -449,7 +472,7 @@ async def format_command(ctx):
     valid_tiers = ['ht1', 'lt1', 'ht2', 'lt2', 'ht3']
     if tier not in valid_tiers:
         await ctx.send(
-            f"Invalid tier: `{tier}`\n"
+            f"❌ Invalid tier: `{tier}`\n"
             f"Valid tiers: {', '.join(valid_tiers)}"
         )
         return
@@ -458,7 +481,7 @@ async def format_command(ctx):
     valid_regions = ['na', 'eu', 'as']
     if region not in valid_regions:
         await ctx.send(
-            f"Invalid region: `{region}`\n"
+            f"❌ Invalid region: `{region}`\n"
             f"Valid regions: {', '.join(valid_regions)}"
         )
         return
