@@ -436,9 +436,6 @@ async def format_slash(interaction: discord.Interaction):
         message += f"**__LT2 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
-        message += f"**__HT3 Fights:__**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n\n"
         message += f"<@&{ping_role_id}>"
     
     elif tier == 'lt1':
@@ -449,9 +446,6 @@ async def format_slash(interaction: discord.Interaction):
         message += f"**__HT2 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
-        message += f"**__LT2 Fights:__**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n\n"
         message += f"<@&{ping_role_id}>"
     
     elif tier == 'ht1':
@@ -459,12 +453,6 @@ async def format_slash(interaction: discord.Interaction):
         message += f"**__HT1 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
         message += f"**__LT1 Fights:__**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n\n"
-        message += f"**__HT2 Fights:__**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n\n"
-        message += f"**__LT2 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
         message += f"<@&{ping_role_id}>"
