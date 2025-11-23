@@ -409,17 +409,22 @@ async def format_slash(interaction: discord.Interaction):
         )
         return
     
-    # Find the user in the channel (looking for members with only 1 role = @everyone)
-    # or the first non-bot member that's not staff
+    # Find the testee in the channel (the member who is NOT staff and NOT the command user)
     testee = None
     staff_role_ids = FORMAT_COMMAND_ROLES + [COMMAND_ROLE_ID] + REQUIRED_ROLES
     
     for member in interaction.channel.members:
-        if member.bot:
+        # Skip bots and the person who used the command
+        if member.bot or member.id == interaction.user.id:
             continue
-        member_role_ids = [role.id for role in member.roles if role.id != interaction.guild.id]  # Exclude @everyone
+        
+        # Get all role IDs except @everyone
+        member_role_ids = [role.id for role in member.roles if role.id != interaction.guild.id]
+        
         # Check if user has no staff roles
-        if not any(role_id in staff_role_ids for role_id in member_role_ids):
+        has_staff_role = any(role_id in staff_role_ids for role_id in member_role_ids)
+        
+        if not has_staff_role:
             testee = member
             break
     
@@ -539,16 +544,22 @@ async def format_command(ctx):
         )
         return
     
-    # Find the user in the channel (looking for members without staff roles)
+    # Find the testee in the channel (the member who is NOT staff and NOT the command user)
     testee = None
     staff_role_ids = FORMAT_COMMAND_ROLES + [COMMAND_ROLE_ID] + REQUIRED_ROLES
     
     for member in ctx.channel.members:
-        if member.bot:
+        # Skip bots and the person who used the command
+        if member.bot or member.id == ctx.author.id:
             continue
-        member_role_ids = [role.id for role in member.roles if role.id != ctx.guild.id]  # Exclude @everyone
+        
+        # Get all role IDs except @everyone
+        member_role_ids = [role.id for role in member.roles if role.id != ctx.guild.id]
+        
         # Check if user has no staff roles
-        if not any(role_id in staff_role_ids for role_id in member_role_ids):
+        has_staff_role = any(role_id in staff_role_ids for role_id in member_role_ids)
+        
+        if not has_staff_role:
             testee = member
             break
     
