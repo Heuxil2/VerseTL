@@ -33,7 +33,7 @@ REQUIRED_ROLES = [
 ROLE_TO_ADD = 1441986636140380327
 
 # ID of the role that can use commands
-COMMAND_ROLE_ID = 1441986636182323302
+COMMAND_ROLE_ID = 1441986636182323306
 
 # IDs of roles that can use format command
 FORMAT_COMMAND_ROLES = [
@@ -337,7 +337,7 @@ async def format_slash(interaction: discord.Interaction):
     valid_tiers = ['ht1', 'lt1', 'ht2', 'lt2', 'ht3']
     if tier not in valid_tiers:
         await interaction.response.send_message(
-            f"❌ Invalid tier: `{tier}`\n"
+            f"Invalid tier: `{tier}`\n"
             f"Valid tiers: {', '.join(valid_tiers)}",
             ephemeral=True
         )
@@ -347,7 +347,7 @@ async def format_slash(interaction: discord.Interaction):
     valid_regions = ['na', 'eu', 'as']
     if region not in valid_regions:
         await interaction.response.send_message(
-            f"❌ Invalid region: `{region}`\n"
+            f"Invalid region: `{region}`\n"
             f"Valid regions: {', '.join(valid_regions)}",
             ephemeral=True
         )
@@ -449,7 +449,7 @@ async def format_command(ctx):
     valid_tiers = ['ht1', 'lt1', 'ht2', 'lt2', 'ht3']
     if tier not in valid_tiers:
         await ctx.send(
-            f"❌ Invalid tier: `{tier}`\n"
+            f"Invalid tier: `{tier}`\n"
             f"Valid tiers: {', '.join(valid_tiers)}"
         )
         return
@@ -458,7 +458,7 @@ async def format_command(ctx):
     valid_regions = ['na', 'eu', 'as']
     if region not in valid_regions:
         await ctx.send(
-            f"❌ Invalid region: `{region}`\n"
+            f"Invalid region: `{region}`\n"
             f"Valid regions: {', '.join(valid_regions)}"
         )
         return
