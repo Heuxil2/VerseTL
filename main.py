@@ -32,6 +32,9 @@ REQUIRED_ROLES = [
 # ID of the role to add
 ROLE_TO_ADD = 1441986636140380327
 
+# ID of the role that can use commands
+COMMAND_ROLE_ID = 1441986636182323302
+
 # Required intents
 intents = discord.Intents.default()
 intents.members = True
@@ -59,6 +62,15 @@ def keep_alive():
     t = Thread(target=run_flask)
     t.daemon = True
     t.start()
+
+# Custom check function for commands
+def has_command_role():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        command_role = interaction.guild.get_role(COMMAND_ROLE_ID)
+        if command_role in interaction.user.roles:
+            return True
+        return False
+    return app_commands.check(predicate)
 
 @bot.event
 async def on_ready():
@@ -153,7 +165,7 @@ async def on_member_update(before, after):
     new_position="Their new role",
     reason="Optional reason for the change"
 )
-@app_commands.checks.has_permissions(administrator=True)
+@has_command_role()
 async def staffmovement(
     interaction: discord.Interaction,
     user: discord.Member,
@@ -188,7 +200,7 @@ async def staffmovement(
         await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
 
 @bot.tree.command(name="execute", description="Execute the bot function to add roles to eligible members")
-@app_commands.checks.has_permissions(administrator=True)
+@has_command_role()
 async def execute(interaction: discord.Interaction):
     """Slash command to check and add the role to all eligible members"""
     await interaction.response.defer(ephemeral=True)
@@ -215,7 +227,10 @@ async def execute(interaction: discord.Interaction):
     error_details = []
     
     # Fetch all members to ensure we have up-to-date data
-    await interaction.guild.chunk()
+    try:
+        await interaction.guild.chunk()
+    except Exception as e:
+        print(f"Error chunking guild: {e}")
     
     for member in interaction.guild.members:
         # Skip bots
@@ -293,15 +308,19 @@ async def sync(ctx):
 # Error handling for slash commands
 @staffmovement.error
 async def staffmovement_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingPermissions):
-        await interaction.response.send_message("You need administrator permissions to use this command!", ephemeral=True)
+    if isinstance(error, app_commands.CheckFailure):
+        await interaction.response.send_message("You don't have the required role to use this command!", ephemeral=True)
     else:
         await interaction.response.send_message("An error occurred!", ephemeral=True)
+        print(f"Staffmovement error: {type(error).__name__}: {error}")
 
 @execute.error
 async def execute_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingPermissions):
-        await interaction.response.send_message("You need administrator permissions to use this command!", ephemeral=True)
+    if isinstance(error, app_commands.CheckFailure):
+        if not interaction.response.is_done():
+            await interaction.response.send_message("You don't have the required role to use this command!", ephemeral=True)
+        else:
+            await interaction.followup.send("You don't have the required role to use this command!", ephemeral=True)
     else:
         # Log the full error for debugging
         print(f"Execute command error: {type(error).__name__}: {error}")
