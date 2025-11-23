@@ -13,18 +13,25 @@ if not TOKEN:
 
 # IDs of required roles
 REQUIRED_ROLES = [
-    1441986636182323305,
-    1441986636182323304,
-    1441986636182323303,
-    1441986636182323302,
-    1441986636169609315,
-    1441986636169609314,
-    1441986636169609312,
-    1441986636169609311
+    1410039139805564928,
+    1408061890441248788,
+    1432163570757664778,
+    1421342524596813955,
+    1432038582318665890,
+    1412240815274590208,
+    1421317233413722133,
+    1407179621950296196,
+    1407096889954013305,
+    1419404798561882212,
+    1407111853997559919,
+    1431068098429194311,
+    1413275389589196862,
+    1413275300908896316,
+    1441986636182323306
 ]
 
 # ID of the role to add
-ROLE_TO_ADD = 1441986636140380327
+ROLE_TO_ADD = 1419413367222960148
 
 # Required intents
 intents = discord.Intents.default()
@@ -98,25 +105,46 @@ async def on_member_join(member):
 
 @bot.event
 async def on_member_update(before, after):
-    """Detects when a member receives a new role"""
-    # Check if new roles have been added
+    """Detects when a member receives or loses a role"""
+    # Check if roles have changed
     added_roles = set(after.roles) - set(before.roles)
+    removed_roles = set(before.roles) - set(after.roles)
     
+    role_to_give = after.guild.get_role(ROLE_TO_ADD)
+    if not role_to_give:
+        return
+    
+    # Check if a required role was added
     if added_roles:
-        # Check if one of the added roles is in the list
         for role in added_roles:
             if role.id in REQUIRED_ROLES:
-                # Get the role to add
-                role_to_give = after.guild.get_role(ROLE_TO_ADD)
-                
-                if role_to_give and role_to_give not in after.roles:
+                if role_to_give not in after.roles:
                     try:
-                        await after.add_roles(role_to_give)
+                        await after.add_roles(role_to_give, reason="User received a required role")
                         print(f'Role {role_to_give.name} added to {after.name}')
                     except discord.Forbidden:
                         print(f'Error: Insufficient permissions to add role to {after.name}')
                     except Exception as e:
-                        print(f'Error: {e}')
+                        print(f'Error adding role to {after.name}: {e}')
+                break
+    
+    # Check if a required role was removed AND user has no other required roles
+    if removed_roles:
+        for role in removed_roles:
+            if role.id in REQUIRED_ROLES:
+                # Check if user still has any required roles
+                member_role_ids = [r.id for r in after.roles]
+                has_any_required_role = any(role_id in REQUIRED_ROLES for role_id in member_role_ids)
+                
+                # If they don't have any required roles anymore, remove the special role
+                if not has_any_required_role and role_to_give in after.roles:
+                    try:
+                        await after.remove_roles(role_to_give, reason="User no longer has any required roles")
+                        print(f'Role {role_to_give.name} removed from {after.name}')
+                    except discord.Forbidden:
+                        print(f'Error: Insufficient permissions to remove role from {after.name}')
+                    except Exception as e:
+                        print(f'Error removing role from {after.name}: {e}')
                 break
 
 @bot.tree.command(name="staffmovement", description="Announce a staff position change")
@@ -136,7 +164,7 @@ async def staffmovement(
 ):
     """Announce a staff position change"""
     channel_id = 1441986637981548637
-    ping_role_id = 1441986635792122023
+    ping_role_id = 1419360838208192542
     
     channel = interaction.guild.get_channel(channel_id)
     
@@ -164,7 +192,7 @@ async def staffmovement(
 @app_commands.checks.has_permissions(administrator=True)
 async def execute(interaction: discord.Interaction):
     """Slash command to check and add the role to all eligible members"""
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=True)
     
     role_to_give = interaction.guild.get_role(ROLE_TO_ADD)
     
@@ -172,25 +200,59 @@ async def execute(interaction: discord.Interaction):
         await interaction.followup.send("The role to add does not exist!")
         return
     
+    # Check bot permissions
+    bot_member = interaction.guild.get_member(bot.user.id)
+    if not bot_member.guild_permissions.manage_roles:
+        await interaction.followup.send("I don't have the 'Manage Roles' permission!")
+        return
+    
+    # Check if bot's role is high enough
+    if role_to_give >= bot_member.top_role:
+        await interaction.followup.send(f"My role is not high enough to assign {role_to_give.mention}! Please move my role above it in the server settings.")
+        return
+    
     count = 0
     errors = 0
+    error_details = []
+    
+    # Fetch all members to ensure we have up-to-date data
+    await interaction.guild.chunk()
     
     for member in interaction.guild.members:
+        # Skip bots
+        if member.bot:
+            continue
+            
         # Check if the member has at least one of the required roles
         member_role_ids = [role.id for role in member.roles]
         has_required_role = any(role_id in REQUIRED_ROLES for role_id in member_role_ids)
         
         if has_required_role and role_to_give not in member.roles:
             try:
-                await member.add_roles(role_to_give)
+                await member.add_roles(role_to_give, reason="Automatic role assignment via /execute")
                 count += 1
+                print(f'Role added to {member.name}')
+            except discord.Forbidden:
+                errors += 1
+                error_details.append(f"{member.name}: Permission denied")
+                print(f'Permission denied for {member.name}')
+            except discord.HTTPException as e:
+                errors += 1
+                error_details.append(f"{member.name}: {str(e)}")
+                print(f'HTTP error for {member.name}: {e}')
             except Exception as e:
                 errors += 1
+                error_details.append(f"{member.name}: {str(e)}")
                 print(f'Error for {member.name}: {e}')
     
-    result_message = f'Role added to {count} member(s)!'
+    # Build result message
+    result_message = f'Role added to **{count}** member(s)!'
     if errors > 0:
-        result_message += f'\n{errors} error(s) occurred.'
+        result_message += f'\n**{errors}** error(s) occurred.'
+        if error_details and len(error_details) <= 5:
+            result_message += "\n\n**Errors:**\n" + "\n".join(error_details[:5])
+        elif error_details:
+            result_message += f"\n\n**First 5 errors:**\n" + "\n".join(error_details[:5])
     
     await interaction.followup.send(result_message)
 
@@ -271,6 +333,16 @@ async def staffmovement_error(interaction: discord.Interaction, error: app_comma
 async def execute_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingPermissions):
         await interaction.response.send_message("You need administrator permissions to use this command!", ephemeral=True)
+    else:
+        # Log the full error for debugging
+        print(f"Execute command error: {type(error).__name__}: {error}")
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"An error occurred: {type(error).__name__}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"An error occurred: {type(error).__name__}", ephemeral=True)
+        except:
+            print("Failed to send error message to user")
 
 @info_slash.error
 async def info_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
