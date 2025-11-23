@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import os
+from threading import Thread
+from flask import Flask
 
 # Configuration
 TOKEN = os.getenv('TOKEN')
@@ -37,6 +39,26 @@ intents.guilds = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Flask app pour Render
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot Discord est actif! ✅"
+
+@app.route('/health')
+def health():
+    return {"status": "online", "bot": str(bot.user) if bot.user else "connecting"}
+
+def run_flask():
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run_flask)
+    t.daemon = True
+    t.start()
 
 @bot.event
 async def on_ready():
@@ -233,6 +255,9 @@ async def execute_error(interaction: discord.Interaction, error: app_commands.Ap
 @info_slash.error
 async def info_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     await interaction.response.send_message("An error occurred!", ephemeral=True)
+
+# Start Flask server in background
+keep_alive()
 
 # Start the bot
 try:
