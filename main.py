@@ -26,8 +26,7 @@ REQUIRED_ROLES = [
     1407111853997559919,
     1431068098429194311,
     1413275389589196862,
-    1413275300908896316,
-    1441986636182323306
+    1413275300908896316
 ]
 
 # ID of the role to add
@@ -46,7 +45,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot Discord est actif! ✅"
+    return "Discord Bot is active!"
 
 @app.route('/health')
 def health():
@@ -67,9 +66,9 @@ async def on_ready():
     print(f'Bot ready to add role {ROLE_TO_ADD}')
     
     # Set bot status and activity
-    activity = discord.Game(name="gg/vanilatiers")
+    activity = discord.Game(name=".gg/vanillatiers")
     await bot.change_presence(status=discord.Status.online, activity=activity)
-    print('Status set to: gg/vanilatiers')
+    print('Status set to: .gg/vanillatiers')
     
     try:
         synced = await bot.tree.sync()
@@ -256,21 +255,6 @@ async def execute(interaction: discord.Interaction):
     
     await interaction.followup.send(result_message)
 
-@bot.tree.command(name="info", description="Display bot information")
-async def info_slash(interaction: discord.Interaction):
-    """Slash command to display bot information"""
-    embed = discord.Embed(
-        title="Bot Information",
-        description="Automatic role assignment bot",
-        color=discord.Color.blue()
-    )
-    embed.add_field(name="Monitored roles", value=f"{len(REQUIRED_ROLES)} roles", inline=True)
-    embed.add_field(name="Role to add", value=f"<@&{ROLE_TO_ADD}>", inline=True)
-    embed.add_field(name="Commands", value="`/execute` - Check all members and add role\n`/info` - Display this information", inline=False)
-    
-    await interaction.response.send_message(embed=embed)
-
-# Prefix commands (kept for compatibility)
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def verify_roles(ctx):
@@ -306,21 +290,6 @@ async def sync(ctx):
     except Exception as e:
         await ctx.send(f'Failed to sync: {e}')
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def info(ctx):
-    """Displays bot information"""
-    embed = discord.Embed(
-        title="Bot Information",
-        description="Automatic role assignment bot",
-        color=discord.Color.blue()
-    )
-    embed.add_field(name="Monitored roles", value=f"{len(REQUIRED_ROLES)} roles", inline=True)
-    embed.add_field(name="Role to add", value=f"<@&{ROLE_TO_ADD}>", inline=True)
-    embed.add_field(name="Commands", value="`!verify_roles` - Check all members\n`!info` - Display this information\n`/execute` - Slash command to check all members\n`/info` - Slash command for info", inline=False)
-    
-    await ctx.send(embed=embed)
-
 # Error handling for slash commands
 @staffmovement.error
 async def staffmovement_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -343,10 +312,6 @@ async def execute_error(interaction: discord.Interaction, error: app_commands.Ap
                 await interaction.followup.send(f"An error occurred: {type(error).__name__}", ephemeral=True)
         except:
             print("Failed to send error message to user")
-
-@info_slash.error
-async def info_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    await interaction.response.send_message("An error occurred!", ephemeral=True)
 
 # Start Flask server in background
 keep_alive()
