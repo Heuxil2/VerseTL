@@ -13,24 +13,20 @@ if not TOKEN:
 
 # IDs of required roles
 REQUIRED_ROLES = [
-    1410039139805564928,
-    1408061890441248788,
-    1432163570757664778,
-    1421342524596813955,
-    1432038582318665890,
-    1412240815274590208,
-    1421317233413722133,
-    1407179621950296196,
-    1407096889954013305,
-    1419404798561882212,
-    1407111853997559919,
-    1431068098429194311,
-    1413275389589196862,
-    1413275300908896316
+    1441986636182323305,
+    1441986636182323304,
+    1441986636182323303,
+    1441986636182323302,
+    1441986636169609315,
+    1441986636169609314,
+    1441986636169609312,
+    1441986636169609311,
+    1407196607505764364,
+    1407102663673253980
 ]
 
 # ID of the role to add
-ROLE_TO_ADD = 1419413367222960148
+ROLE_TO_ADD = 1441986636140380327
 
 # Required intents
 intents = discord.Intents.default()
@@ -85,19 +81,19 @@ async def on_member_join(member):
     if channel:
         # Create embed
         embed = discord.Embed(
-            title="Get Started:",
             description=(
-                "> Read the Rules → <#1441986636547231786>\n"
-                "> Request Test → <#1441986636547231792>"
+                f"🎉 Hey {member.mention}, welcome to **{member.guild.name}!** 🎉\n"
+                "Glad you're here! To get started:\n"
+                "- **Request a Test:** <#1441986636547231792>\n"
+                "- **Ask for Support:** <#1441986636933103750>\n"
+                "- **Report Staff Issues:** <#1441986636933103751>\n"
+                "Take a look around, join the chats, and have fun! 🚀"
             ),
-            color=discord.Color.blue()
+            color=0xCDB382
         )
         
         try:
-            await channel.send(
-                f"Hey {member.mention}, welcome to [1.21.1+] Vanilla Tiers! :tada:",
-                embed=embed
-            )
+            await channel.send(embed=embed)
             print(f'Welcome message sent for {member.name}')
         except Exception as e:
             print(f'Error sending welcome message: {e}')
@@ -142,7 +138,7 @@ async def staffmovement(
 ):
     """Announce a staff position change"""
     channel_id = 1441986637981548637
-    ping_role_id = 1419360838208192542
+    ping_role_id = 1441986635792122023
     
     channel = interaction.guild.get_channel(channel_id)
     
