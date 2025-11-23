@@ -35,6 +35,14 @@ ROLE_TO_ADD = 1441986636140380327
 # ID of the role that can use commands
 COMMAND_ROLE_ID = 1441986636182323302
 
+# IDs of roles that can use format command
+FORMAT_COMMAND_ROLES = [
+    1441986636169609310,
+    1441986636169609309,
+    1441986636182323302,
+    1441986636182323303
+]
+
 # Required intents
 intents = discord.Intents.default()
 intents.members = True
@@ -68,6 +76,15 @@ def has_command_role():
     async def predicate(interaction: discord.Interaction) -> bool:
         command_role = interaction.guild.get_role(COMMAND_ROLE_ID)
         if command_role in interaction.user.roles:
+            return True
+        return False
+    return app_commands.check(predicate)
+
+# Custom check function for format command
+def has_format_role():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        user_role_ids = [role.id for role in interaction.user.roles]
+        if any(role_id in FORMAT_COMMAND_ROLES for role_id in user_role_ids):
             return True
         return False
     return app_commands.check(predicate)
@@ -296,7 +313,7 @@ async def verify_roles(ctx):
     await ctx.send(f'Role added to {count} member(s)!')
 
 @bot.tree.command(name="format", description="Generate test result format based on channel name")
-@has_command_role()
+@has_format_role()
 async def format_slash(interaction: discord.Interaction):
     """Generate test result format"""
     channel_name = interaction.channel.name.lower()
@@ -404,9 +421,11 @@ async def format_slash(interaction: discord.Interaction):
 @bot.command(name='format')
 async def format_command(ctx):
     """Generate test result format (prefix command)"""
-    # Check if user has the required role
-    command_role = ctx.guild.get_role(COMMAND_ROLE_ID)
-    if command_role not in ctx.author.roles:
+    # Check if user has any of the required roles
+    user_role_ids = [role.id for role in ctx.author.roles]
+    has_required_role = any(role_id in FORMAT_COMMAND_ROLES for role_id in user_role_ids)
+    
+    if not has_required_role:
         await ctx.send("You don't have the required role to use this command!", delete_after=5)
         return
     
