@@ -11,22 +11,15 @@ TOKEN = os.getenv('TOKEN')
 if not TOKEN:
     raise ValueError("TOKEN environment variable is not set!")
 
-# IDs of required roles
+# IDs of required roles - UPDATED
 REQUIRED_ROLES = [
-    1410039139805564928,
-    1408061890441248788,
-    1432163570757664778,
-    1421342524596813955,
-    1432038582318665890,
-    1412240815274590208,
-    1421317233413722133,
-    1407179621950296196,
-    1407096889954013305,
-    1419404798561882212,
-    1407111853997559919,
-    1431068098429194311,
-    1413275389589196862,
-    1413275300908896316
+    1441986636182323306,
+    1441986636182323305,
+    1441986636182323304,
+    1441986636182323303,
+    1441986636182323302,
+    1441986636169609315,
+    1441986636169609314
 ]
 
 # ID of the role to add
@@ -137,12 +130,12 @@ async def on_member_join(member):
         # Create embed
         embed = discord.Embed(
             description=(
-                f"🎉 Hey {member.mention}, welcome to **{member.guild.name}!** 🎉\n"
+                f"Hey {member.mention}, welcome to **{member.guild.name}!**\n"
                 "Glad you're here! To get started:\n"
                 "- **Request a Test:** <#1441986636547231792>\n"
                 "- **Ask for Support:** <#1441986636933103750>\n"
                 "- **Report Staff Issues:** <#1441986636933103751>\n"
-                "Take a look around, join the chats, and have fun! 🚀"
+                "Take a look around, join the chats, and have fun!"
             ),
             color=0xCDB382
         )
@@ -273,7 +266,7 @@ async def execute(interaction: discord.Interaction):
     eligible_count = 0
     
     # Send initial status
-    await interaction.followup.send("⏳ Fetching all members... This may take a moment.")
+    await interaction.followup.send("Fetching all members... This may take a moment.")
     
     # Fetch all members to ensure we have up-to-date data
     try:
@@ -325,12 +318,12 @@ async def execute(interaction: discord.Interaction):
                 print(f"{member.name} already has the role")
     
     # Build result message
-    result_message = f'✅ **Scan Complete!**\n\n'
-    result_message += f'👥 Eligible members found: **{eligible_count}**\n'
-    result_message += f'➕ Role added to: **{count}** member(s)\n'
+    result_message = f'**Scan Complete!**\n\n'
+    result_message += f'Eligible members found: **{eligible_count}**\n'
+    result_message += f'Role added to: **{count}** member(s)\n'
     
     if errors > 0:
-        result_message += f'\n❌ **{errors}** error(s) occurred.'
+        result_message += f'\n**{errors}** error(s) occurred.'
         if error_details and len(error_details) <= 10:
             result_message += "\n\n**Errors:**\n" + "\n".join(error_details[:10])
         elif error_details:
@@ -377,8 +370,8 @@ async def format_slash(interaction: discord.Interaction):
     
     if len(parts) < 3:
         await interaction.response.send_message(
-            "❌ Invalid channel name format! Expected: `(tier)-(player)-(region)`\n"
-            "Example: `ht3-feardesto-eu`",
+            "Invalid channel name format! Expected: `(tier)-(player)-(region)`\n"
+            "Example: `ht3-heuxil-eu`",
             ephemeral=True
         )
         return
@@ -391,7 +384,7 @@ async def format_slash(interaction: discord.Interaction):
     valid_tiers = ['ht1', 'lt1', 'ht2', 'lt2', 'ht3']
     if tier not in valid_tiers:
         await interaction.response.send_message(
-            f"❌ Invalid tier: `{tier}`\n"
+            f"Invalid tier: `{tier}`\n"
             f"Valid tiers: {', '.join(valid_tiers)}",
             ephemeral=True
         )
@@ -401,7 +394,7 @@ async def format_slash(interaction: discord.Interaction):
     valid_regions = ['na', 'eu', 'as']
     if region not in valid_regions:
         await interaction.response.send_message(
-            f"❌ Invalid region: `{region}`\n"
+            f"Invalid region: `{region}`\n"
             f"Valid regions: {', '.join(valid_regions)}",
             ephemeral=True
         )
@@ -493,7 +486,7 @@ async def format_command(ctx):
     
     if len(parts) < 3:
         await ctx.send(
-            "❌ Invalid channel name format! Expected: `(tier)-(player)-(region)`\n"
+            "Invalid channel name format! Expected: `(tier)-(player)-(region)`\n"
             "Example: `ht3-feardesto-eu`"
         )
         return
@@ -506,7 +499,7 @@ async def format_command(ctx):
     valid_tiers = ['ht1', 'lt1', 'ht2', 'lt2', 'ht3']
     if tier not in valid_tiers:
         await ctx.send(
-            f"❌ Invalid tier: `{tier}`\n"
+            f"Invalid tier: `{tier}`\n"
             f"Valid tiers: {', '.join(valid_tiers)}"
         )
         return
@@ -515,7 +508,7 @@ async def format_command(ctx):
     valid_regions = ['na', 'eu', 'as']
     if region not in valid_regions:
         await ctx.send(
-            f"❌ Invalid region: `{region}`\n"
+            f"Invalid region: `{region}`\n"
             f"Valid regions: {', '.join(valid_regions)}"
         )
         return
