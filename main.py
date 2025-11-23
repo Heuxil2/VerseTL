@@ -30,7 +30,7 @@ REQUIRED_ROLES = [
 ]
 
 # ID of the role to add
-ROLE_TO_ADD = 1419413367222960148
+ROLE_TO_ADD = 1441986636140380327
 
 # Required intents
 intents = discord.Intents.default()
@@ -163,7 +163,7 @@ async def staffmovement(
 ):
     """Announce a staff position change"""
     channel_id = 1441986637981548637
-    ping_role_id = 1419360838208192542
+    ping_role_id = 1441986635792122023
     
     channel = interaction.guild.get_channel(channel_id)
     
