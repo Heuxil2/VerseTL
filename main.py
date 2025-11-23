@@ -77,6 +77,32 @@ async def on_ready():
         print(f'Failed to sync commands: {e}')
 
 @bot.event
+async def on_member_join(member):
+    """Send welcome message when a new member joins"""
+    welcome_channel_id = 1442006827607789578
+    channel = member.guild.get_channel(welcome_channel_id)
+    
+    if channel:
+        # Create embed
+        embed = discord.Embed(
+            title="Get Started:",
+            description=(
+                "> Read the Rules → <#1441986636547231786>\n"
+                "> Request Test → <#1441986636547231792>"
+            ),
+            color=discord.Color.blue()
+        )
+        
+        try:
+            await channel.send(
+                f"Hey {member.mention}, welcome to [1.21.1+] Vanilla Tiers! :tada:",
+                embed=embed
+            )
+            print(f'Welcome message sent for {member.name}')
+        except Exception as e:
+            print(f'Error sending welcome message: {e}')
+
+@bot.event
 async def on_member_update(before, after):
     """Detects when a member receives a new role"""
     # Check if new roles have been added
@@ -115,7 +141,7 @@ async def staffmovement(
     reason: str = None
 ):
     """Announce a staff position change"""
-    channel_id = 1407097377852096563
+    channel_id = 1441986637981548637
     ping_role_id = 1419360838208192542
     
     channel = interaction.guild.get_channel(channel_id)
