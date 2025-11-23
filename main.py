@@ -409,17 +409,34 @@ async def format_slash(interaction: discord.Interaction):
         )
         return
     
+    # Find the user in the channel (looking for members with only 1 role = @everyone)
+    # or the first non-bot member that's not staff
+    testee = None
+    staff_role_ids = FORMAT_COMMAND_ROLES + [COMMAND_ROLE_ID] + REQUIRED_ROLES
+    
+    for member in interaction.channel.members:
+        if member.bot:
+            continue
+        member_role_ids = [role.id for role in member.roles if role.id != interaction.guild.id]  # Exclude @everyone
+        # Check if user has no staff roles
+        if not any(role_id in staff_role_ids for role_id in member_role_ids):
+            testee = member
+            break
+    
+    # If no testee found, use placeholder
+    testee_mention = testee.mention if testee else "@testee"
+    
     # Generate format based on tier
     ping_role_id = 1441986635792122022
     
     if tier == 'ht3':
-        message = f"@testee - ign - **Failed/Passed High Tier 3**\n*Passed Evaluation*\n\n"
+        message = f"{testee_mention} - ign - **Failed/Passed High Tier 3**\n*Passed Evaluation*\n\n"
         message += f"**__HT3 Fights:__**\n"
         message += f"> Lost/won ft3 vs **IGN**\n\n"
         message += f"<@&{ping_role_id}>"
     
     elif tier == 'lt2':
-        message = f"@testee - ign - **Failed/Passed Low Tier 2**\n\n"
+        message = f"{testee_mention} - ign - **Failed/Passed Low Tier 2**\n\n"
         message += f"**__LT2 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
@@ -429,7 +446,7 @@ async def format_slash(interaction: discord.Interaction):
         message += f"<@&{ping_role_id}>"
     
     elif tier == 'ht2':
-        message = f"@testee - ign - **Failed/Passed High Tier 2**\n\n"
+        message = f"{testee_mention} - ign - **Failed/Passed High Tier 2**\n\n"
         message += f"**__HT2 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
@@ -442,7 +459,7 @@ async def format_slash(interaction: discord.Interaction):
         message += f"<@&{ping_role_id}>"
     
     elif tier == 'lt1':
-        message = f"@testee - ign - **Failed/Passed Low Tier 1**\n\n"
+        message = f"{testee_mention} - ign - **Failed/Passed Low Tier 1**\n\n"
         message += f"**__LT1 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
@@ -455,7 +472,7 @@ async def format_slash(interaction: discord.Interaction):
         message += f"<@&{ping_role_id}>"
     
     elif tier == 'ht1':
-        message = f"@testee - ign - **Failed/Passed High Tier 1**\n\n"
+        message = f"{testee_mention} - ign - **Failed/Passed High Tier 1**\n\n"
         message += f"**__HT1 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
         message += f"**__LT1 Fights:__**\n"
@@ -522,17 +539,33 @@ async def format_command(ctx):
         )
         return
     
+    # Find the user in the channel (looking for members without staff roles)
+    testee = None
+    staff_role_ids = FORMAT_COMMAND_ROLES + [COMMAND_ROLE_ID] + REQUIRED_ROLES
+    
+    for member in ctx.channel.members:
+        if member.bot:
+            continue
+        member_role_ids = [role.id for role in member.roles if role.id != ctx.guild.id]  # Exclude @everyone
+        # Check if user has no staff roles
+        if not any(role_id in staff_role_ids for role_id in member_role_ids):
+            testee = member
+            break
+    
+    # If no testee found, use placeholder
+    testee_mention = testee.mention if testee else "@testee"
+    
     # Generate format based on tier
     ping_role_id = 1441986635792122022
     
     if tier == 'ht3':
-        message = f"@testee - ign - **Failed/Passed High Tier 3**\n*Passed Evaluation*\n\n"
+        message = f"{testee_mention} - ign - **Failed/Passed High Tier 3**\n*Passed Evaluation*\n\n"
         message += f"**__HT3 Fights:__**\n"
         message += f"> Lost/won ft3 vs **IGN**\n\n"
         message += f"<@&{ping_role_id}>"
     
     elif tier == 'lt2':
-        message = f"@testee - ign - **Failed/Passed Low Tier 2**\n\n"
+        message = f"{testee_mention} - ign - **Failed/Passed Low Tier 2**\n\n"
         message += f"**__LT2 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
@@ -542,7 +575,7 @@ async def format_command(ctx):
         message += f"<@&{ping_role_id}>"
     
     elif tier == 'ht2':
-        message = f"@testee - ign - **Failed/Passed High Tier 2**\n\n"
+        message = f"{testee_mention} - ign - **Failed/Passed High Tier 2**\n\n"
         message += f"**__HT2 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
@@ -555,7 +588,7 @@ async def format_command(ctx):
         message += f"<@&{ping_role_id}>"
     
     elif tier == 'lt1':
-        message = f"@testee - ign - **Failed/Passed Low Tier 1**\n\n"
+        message = f"{testee_mention} - ign - **Failed/Passed Low Tier 1**\n\n"
         message += f"**__LT1 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
@@ -568,7 +601,7 @@ async def format_command(ctx):
         message += f"<@&{ping_role_id}>"
     
     elif tier == 'ht1':
-        message = f"@testee - ign - **Failed/Passed High Tier 1**\n\n"
+        message = f"{testee_mention} - ign - **Failed/Passed High Tier 1**\n\n"
         message += f"**__HT1 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
         message += f"**__LT1 Fights:__**\n"
