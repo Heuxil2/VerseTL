@@ -218,8 +218,17 @@ async def staffmovement(
         await interaction.response.send_message("Channel not found!", ephemeral=True)
         return
     
+    # Build role names with icons if available
+    old_role_display = f"**{old_position.name}**"
+    if old_position.icon:
+        old_role_display = f"{old_role_display} {old_position.icon}"
+    
+    new_role_display = f"**{new_position.name}**"
+    if new_position.icon:
+        new_role_display = f"{new_role_display} {new_position.icon}"
+    
     # Build the message
-    message = f"{user.mention} **{old_position.name}** → **{new_position.name}**"
+    message = f"{user.mention} {old_role_display} → {new_role_display}"
     
     if reason:
         message += f"\n**Reason:** {reason}"
