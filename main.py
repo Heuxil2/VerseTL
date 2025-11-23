@@ -295,6 +295,220 @@ async def verify_roles(ctx):
     
     await ctx.send(f'Role added to {count} member(s)!')
 
+@bot.tree.command(name="format", description="Generate test result format based on channel name")
+@has_command_role()
+async def format_slash(interaction: discord.Interaction):
+    """Generate test result format"""
+    channel_name = interaction.channel.name.lower()
+    
+    # Parse channel name (tier-player-region)
+    parts = channel_name.split('-')
+    
+    if len(parts) < 3:
+        await interaction.response.send_message(
+            "❌ Invalid channel name format! Expected: `(tier)-(player)-(region)`\n"
+            "Example: `ht3-feardesto-eu`",
+            ephemeral=True
+        )
+        return
+    
+    tier = parts[0]
+    player = parts[1]
+    region = parts[2]
+    
+    # Validate tier
+    valid_tiers = ['ht1', 'lt1', 'ht2', 'lt2', 'ht3']
+    if tier not in valid_tiers:
+        await interaction.response.send_message(
+            f"❌ Invalid tier: `{tier}`\n"
+            f"Valid tiers: {', '.join(valid_tiers)}",
+            ephemeral=True
+        )
+        return
+    
+    # Validate region
+    valid_regions = ['na', 'eu', 'as']
+    if region not in valid_regions:
+        await interaction.response.send_message(
+            f"❌ Invalid region: `{region}`\n"
+            f"Valid regions: {', '.join(valid_regions)}",
+            ephemeral=True
+        )
+        return
+    
+    # Generate format based on tier
+    ping_role_id = 1441986635792122022
+    
+    if tier == 'ht3':
+        message = f"@testee - ign - **Failed/Passed High Tier 3**\n*Passed Evaluation*\n\n"
+        message += f"**__HT3 Fights:__**\n"
+        message += f"> Lost/won ft3 vs **IGN**\n\n"
+        message += f"<@&{ping_role_id}>"
+    
+    elif tier == 'lt2':
+        message = f"@testee - ign - **Failed/Passed Low Tier 2**\n\n"
+        message += f"**__LT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__HT3 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"<@&{ping_role_id}>"
+    
+    elif tier == 'ht2':
+        message = f"@testee - ign - **Failed/Passed High Tier 2**\n\n"
+        message += f"**__HT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__LT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__HT3 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"<@&{ping_role_id}>"
+    
+    elif tier == 'lt1':
+        message = f"@testee - ign - **Failed/Passed Low Tier 1**\n\n"
+        message += f"**__LT1 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__HT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__LT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"<@&{ping_role_id}>"
+    
+    elif tier == 'ht1':
+        message = f"@testee - ign - **Failed/Passed High Tier 1**\n\n"
+        message += f"**__HT1 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__LT1 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__HT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__LT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"<@&{ping_role_id}>"
+    
+    try:
+        await interaction.response.send_message(message)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
+
+@bot.command(name='format')
+async def format_command(ctx):
+    """Generate test result format (prefix command)"""
+    # Check if user has the required role
+    command_role = ctx.guild.get_role(COMMAND_ROLE_ID)
+    if command_role not in ctx.author.roles:
+        await ctx.send("You don't have the required role to use this command!", delete_after=5)
+        return
+    
+    channel_name = ctx.channel.name.lower()
+    
+    # Parse channel name (tier-player-region)
+    parts = channel_name.split('-')
+    
+    if len(parts) < 3:
+        await ctx.send(
+            "❌ Invalid channel name format! Expected: `(tier)-(player)-(region)`\n"
+            "Example: `ht3-feardesto-eu`"
+        )
+        return
+    
+    tier = parts[0]
+    player = parts[1]
+    region = parts[2]
+    
+    # Validate tier
+    valid_tiers = ['ht1', 'lt1', 'ht2', 'lt2', 'ht3']
+    if tier not in valid_tiers:
+        await ctx.send(
+            f"❌ Invalid tier: `{tier}`\n"
+            f"Valid tiers: {', '.join(valid_tiers)}"
+        )
+        return
+    
+    # Validate region
+    valid_regions = ['na', 'eu', 'as']
+    if region not in valid_regions:
+        await ctx.send(
+            f"❌ Invalid region: `{region}`\n"
+            f"Valid regions: {', '.join(valid_regions)}"
+        )
+        return
+    
+    # Generate format based on tier
+    ping_role_id = 1441986635792122022
+    
+    if tier == 'ht3':
+        message = f"@testee - ign - **Failed/Passed High Tier 3**\n*Passed Evaluation*\n\n"
+        message += f"**__HT3 Fights:__**\n"
+        message += f"> Lost/won ft3 vs **IGN**\n\n"
+        message += f"<@&{ping_role_id}>"
+    
+    elif tier == 'lt2':
+        message = f"@testee - ign - **Failed/Passed Low Tier 2**\n\n"
+        message += f"**__LT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__HT3 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"<@&{ping_role_id}>"
+    
+    elif tier == 'ht2':
+        message = f"@testee - ign - **Failed/Passed High Tier 2**\n\n"
+        message += f"**__HT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__LT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__HT3 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"<@&{ping_role_id}>"
+    
+    elif tier == 'lt1':
+        message = f"@testee - ign - **Failed/Passed Low Tier 1**\n\n"
+        message += f"**__LT1 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__HT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__LT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"<@&{ping_role_id}>"
+    
+    elif tier == 'ht1':
+        message = f"@testee - ign - **Failed/Passed High Tier 1**\n\n"
+        message += f"**__HT1 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__LT1 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__HT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"**__LT2 Fights:__**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n"
+        message += f"> Lost/won ft4 vs **IGN**\n\n"
+        message += f"<@&{ping_role_id}>"
+    
+    try:
+        await ctx.send(message)
+    except Exception as e:
+        await ctx.send(f"An error occurred: {e}")
+
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def sync(ctx):
@@ -313,6 +527,23 @@ async def staffmovement_error(interaction: discord.Interaction, error: app_comma
     else:
         await interaction.response.send_message("An error occurred!", ephemeral=True)
         print(f"Staffmovement error: {type(error).__name__}: {error}")
+
+@format_slash.error
+async def format_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.CheckFailure):
+        if not interaction.response.is_done():
+            await interaction.response.send_message("You don't have the required role to use this command!", ephemeral=True)
+        else:
+            await interaction.followup.send("You don't have the required role to use this command!", ephemeral=True)
+    else:
+        print(f"Format command error: {type(error).__name__}: {error}")
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"An error occurred: {type(error).__name__}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"An error occurred: {type(error).__name__}", ephemeral=True)
+        except:
+            print("Failed to send error message to user")
 
 @execute.error
 async def execute_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
