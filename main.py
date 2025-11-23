@@ -43,6 +43,9 @@ FORMAT_COMMAND_ROLES = [
     1441986636182323303
 ]
 
+# Log channel ID
+LOG_CHANNEL_ID = 1441986637981548640
+
 # Required intents
 intents = discord.Intents.default()
 intents.members = True
@@ -88,6 +91,25 @@ def has_format_role():
             return True
         return False
     return app_commands.check(predicate)
+
+async def log_command_usage(guild, user, command_name, channel):
+    """Log command usage to the log channel"""
+    log_channel = guild.get_channel(LOG_CHANNEL_ID)
+    if not log_channel:
+        return
+    
+    try:
+        embed = discord.Embed(
+            title="Command Used",
+            description=f"{user.mention} used the command `/{command_name}` in {channel.mention}.",
+            color=0x2F3136,
+            timestamp=discord.utils.utcnow()
+        )
+        embed.set_footer(text=f"User ID: {user.id}")
+        
+        await log_channel.send(embed=embed)
+    except Exception as e:
+        print(f"Error logging command: {e}")
 
 @bot.event
 async def on_ready():
@@ -191,6 +213,9 @@ async def staffmovement(
     reason: str = None
 ):
     """Announce a staff position change"""
+    # Log command usage
+    await log_command_usage(interaction.guild, interaction.user, "staffmovement", interaction.channel)
+    
     channel_id = 1441986637981548637
     ping_role_id = 1441986635792122023
     
@@ -220,6 +245,9 @@ async def staffmovement(
 @has_command_role()
 async def execute(interaction: discord.Interaction):
     """Slash command to check and add the role to all eligible members"""
+    # Log command usage
+    await log_command_usage(interaction.guild, interaction.user, "execute", interaction.channel)
+    
     await interaction.response.defer(ephemeral=True)
     
     role_to_give = interaction.guild.get_role(ROLE_TO_ADD)
@@ -339,6 +367,9 @@ async def verify_roles(ctx):
 @has_format_role()
 async def format_slash(interaction: discord.Interaction):
     """Generate test result format"""
+    # Log command usage
+    await log_command_usage(interaction.guild, interaction.user, "format", interaction.channel)
+    
     channel_name = interaction.channel.name.lower()
     
     # Parse channel name (tier-player-region)
@@ -451,6 +482,9 @@ async def format_command(ctx):
     if not has_required_role:
         await ctx.send("You don't have the required role to use this command!", delete_after=5)
         return
+    
+    # Log command usage
+    await log_command_usage(ctx.guild, ctx.author, "format", ctx.channel)
     
     channel_name = ctx.channel.name.lower()
     
@@ -565,18 +599,35 @@ async def sync(ctx):
 @staffmovement.error
 async def staffmovement_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.CheckFailure):
-        await interaction.response.send_message("You don't have the required role to use this command!", ephemeral=True)
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message("You don't have the required role to use this command!", ephemeral=True)
+            else:
+                await interaction.followup.send("You don't have the required role to use this command!", ephemeral=True)
+        except:
+            print(f"Could not send error message for staffmovement: {error}")
     else:
-        await interaction.response.send_message("An error occurred!", ephemeral=True)
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message("An error occurred!", ephemeral=True)
+            else:
+                await interaction.followup.send("An error occurred!", ephemeral=True)
+        except:
+            pass
         print(f"Staffmovement error: {type(error).__name__}: {error}")
 
 @format_slash.error
 async def format_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.CheckFailure):
-        if not interaction.response.is_done():
-            await interaction.response.send_message("You don't have the required role to use this command!", ephemeral=True)
-        else:
-            await interaction.followup.send("You don't have the required role to use this command!", ephemeral=True)
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message("You don't have the required role to use this command!", ephemeral=True)
+            else:
+                await interaction.followup.send("You don't have the required role to use this command!", ephemeral=True)
+        except discord.errors.NotFound:
+            print(f"Interaction expired for format command by user {interaction.user.name}")
+        except Exception as e:
+            print(f"Could not send error message for format: {e}")
     else:
         print(f"Format command error: {type(error).__name__}: {error}")
         try:
