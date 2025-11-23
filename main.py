@@ -13,31 +13,33 @@ if not TOKEN:
 
 # IDs of required roles - UPDATED
 REQUIRED_ROLES = [
-    1441986636182323306,
-    1441986636182323305,
-    1441986636182323304,
-    1441986636182323303,
-    1441986636182323302,
-    1441986636169609315,
-    1441986636169609314
+    1440855338839576626,
+    1442166383977955471,
+    1412240815274590208,
+    1441253398170173601,
+    1407179621950296196,
+    1407096889954013305,
+    1419404798561882212,
+    1413275389589196862,
+    1413275300908896316
 ]
 
 # ID of the role to add
-ROLE_TO_ADD = 1441986636140380327
+ROLE_TO_ADD = 1419413367222960148
 
 # ID of the role that can use commands
-COMMAND_ROLE_ID = 1441986636182323302
+COMMAND_ROLE_ID = 1442166383977955471
 
 # IDs of roles that can use format command
 FORMAT_COMMAND_ROLES = [
-    1441986636169609310,
-    1441986636169609309,
-    1441986636182323302,
-    1441986636182323303
+    1407179621950296196,
+    1407096889954013305,
+    1407196607505764364,
+    1407102663673253980
 ]
 
 # Log channel ID
-LOG_CHANNEL_ID = 1441986637981548640
+LOG_CHANNEL_ID = 1407146849625837589
 
 # Required intents
 intents = discord.Intents.default()
@@ -209,8 +211,8 @@ async def staffmovement(
     # Log command usage
     await log_command_usage(interaction.guild, interaction.user, "staffmovement", interaction.channel)
     
-    channel_id = 1441986637981548637
-    ping_role_id = 1441986635792122023
+    channel_id = 1407097377852096563
+    ping_role_id = 1419360838208192542
     
     channel = interaction.guild.get_channel(channel_id)
     
@@ -310,19 +312,19 @@ async def execute(interaction: discord.Interaction):
                 try:
                     await member.add_roles(role_to_give, reason="Automatic role assignment via /execute")
                     count += 1
-                    print(f'✅ Role added to {member.name}')
+                    print(f'Role added to {member.name}')
                 except discord.Forbidden:
                     errors += 1
                     error_details.append(f"{member.name}: Permission denied")
-                    print(f'❌ Permission denied for {member.name}')
+                    print(f'Permission denied for {member.name}')
                 except discord.HTTPException as e:
                     errors += 1
                     error_details.append(f"{member.name}: {str(e)}")
-                    print(f'❌ HTTP error for {member.name}: {e}')
+                    print(f'HTTP error for {member.name}: {e}')
                 except Exception as e:
                     errors += 1
                     error_details.append(f"{member.name}: {str(e)}")
-                    print(f'❌ Error for {member.name}: {e}')
+                    print(f'Error for {member.name}: {e}')
             else:
                 print(f"{member.name} already has the role")
     
@@ -410,7 +412,7 @@ async def format_slash(interaction: discord.Interaction):
         return
     
     # Generate format based on tier
-    ping_role_id = 1441986635792122022
+    ping_role_id = 1419360899709272176
     
     if tier == 'ht3':
         message = f"@testee - ign - **Failed/Passed High Tier 3**\n*Passed Evaluation*\n\n"
@@ -511,7 +513,7 @@ async def format_command(ctx):
         return
     
     # Generate format based on tier
-    ping_role_id = 1441986635792122022
+    ping_role_id = 1419360899709272176
     
     if tier == 'ht3':
         message = f"@testee - ign - **Failed/Passed High Tier 3**\n*Passed Evaluation*\n\n"
@@ -537,9 +539,6 @@ async def format_command(ctx):
         message += f"**__LT2 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
-        message += f"**__HT3 Fights:__**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n\n"
         message += f"<@&{ping_role_id}>"
     
     elif tier == 'lt1':
@@ -550,9 +549,6 @@ async def format_command(ctx):
         message += f"**__HT2 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
-        message += f"**__LT2 Fights:__**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n\n"
         message += f"<@&{ping_role_id}>"
     
     elif tier == 'ht1':
@@ -560,12 +556,6 @@ async def format_command(ctx):
         message += f"**__HT1 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
         message += f"**__LT1 Fights:__**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n\n"
-        message += f"**__HT2 Fights:__**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n"
-        message += f"> Lost/won ft4 vs **IGN**\n\n"
-        message += f"**__LT2 Fights:__**\n"
         message += f"> Lost/won ft4 vs **IGN**\n"
         message += f"> Lost/won ft4 vs **IGN**\n\n"
         message += f"<@&{ping_role_id}>"
