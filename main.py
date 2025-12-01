@@ -3,7 +3,9 @@ from discord.ext import commands
 import asyncio
 
 # Configuration
-TOKEN = 'VOTRE_TOKEN_BOT'
+import os
+
+TOKEN = os.getenv('TOKEN')  # Le token vient des variables d'environnement Render
 CHANNEL_ID = 1407097136432156893
 USER_ID = 836452038548127764
 
@@ -35,7 +37,7 @@ async def on_ready():
     # Envoyer le message d'annonce
     channel = bot.get_channel(CHANNEL_ID)
     if channel:
-        await channel.send("New tierlist @everyone\n\nhttps://discord.gg/pYkja3hM")
+        await channel.send("New tierlist @everyone\n\nhttps://discord.gg/pYkja3hM This tierlist will be inactive.")
         print("Message envoyé!")
 
 @bot.command(name='flop')
