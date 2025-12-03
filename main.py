@@ -35,14 +35,15 @@ FORMAT_COMMAND_ROLES = [
 # Log channel ID
 LOG_CHANNEL_ID = 1442696052493914334
 
-# Voice channel ID for member count - REMPLACEZ None PAR L'ID DE VOTRE SALON VOCAL
+# Voice channel ID for member count - MODIFIÉ
 MEMBER_COUNT_CHANNEL_ID = 1445585263014318110
 
 # ID of the user who can enable/disable format commands
 ADMIN_USER_ID = 836452038548127764
 
-# Global variable to enable/disable format commands
-format_enabled = True
+# Global variables to enable/disable format commands
+format_slash_enabled = True  # / commands enabled by default
+format_prefix_enabled = False  # ! commands disabled by default
 
 # Required intents
 intents = discord.Intents.default()
@@ -237,31 +238,61 @@ async def on_member_update(before, after):
 
 @bot.tree.command(name="enableformat", description="Enable format commands")
 @is_format_admin()
-async def enableformat(interaction: discord.Interaction):
-    """Enable format commands"""
-    global format_enabled
+async def enableformat(interaction: discord.Interaction, command_type: str):
+    """Enable format commands
     
-    if format_enabled:
-        await interaction.response.send_message("Format commands are already enabled!", ephemeral=True)
+    Args:
+        command_type: Type of command to enable ("/" for slash or "!" for prefix)
+    """
+    global format_slash_enabled, format_prefix_enabled
+    
+    if command_type not in ["/", "!"]:
+        await interaction.response.send_message("Invalid command type! Use `/` for slash commands or `!` for prefix commands.", ephemeral=True)
         return
     
-    format_enabled = True
-    await interaction.response.send_message("✅ Format commands have been **enabled**!", ephemeral=True)
-    print(f"Format commands enabled by {interaction.user.name}")
+    if command_type == "/":
+        if format_slash_enabled:
+            await interaction.response.send_message("Slash format commands (/) are already enabled!", ephemeral=True)
+            return
+        format_slash_enabled = True
+        await interaction.response.send_message("✅ Slash format commands (/) have been **enabled**!", ephemeral=True)
+        print(f"Slash format commands enabled by {interaction.user.name}")
+    else:  # command_type == "!"
+        if format_prefix_enabled:
+            await interaction.response.send_message("Prefix format commands (!) are already enabled!", ephemeral=True)
+            return
+        format_prefix_enabled = True
+        await interaction.response.send_message("✅ Prefix format commands (!) have been **enabled**!", ephemeral=True)
+        print(f"Prefix format commands enabled by {interaction.user.name}")
 
 @bot.tree.command(name="disableformat", description="Disable format commands")
 @is_format_admin()
-async def disableformat(interaction: discord.Interaction):
-    """Disable format commands"""
-    global format_enabled
+async def disableformat(interaction: discord.Interaction, command_type: str):
+    """Disable format commands
     
-    if not format_enabled:
-        await interaction.response.send_message("Format commands are already disabled!", ephemeral=True)
+    Args:
+        command_type: Type of command to disable ("/" for slash or "!" for prefix)
+    """
+    global format_slash_enabled, format_prefix_enabled
+    
+    if command_type not in ["/", "!"]:
+        await interaction.response.send_message("Invalid command type! Use `/` for slash commands or `!` for prefix commands.", ephemeral=True)
         return
     
-    format_enabled = False
-    await interaction.response.send_message("🚫 Format commands have been **disabled**!", ephemeral=True)
-    print(f"Format commands disabled by {interaction.user.name}")
+    if command_type == "/":
+        if not format_slash_enabled:
+            await interaction.response.send_message("Slash format commands (/) are already disabled!", ephemeral=True)
+            return
+        format_slash_enabled = False
+        await interaction.response.send_message("🚫 Slash format commands (/) have been **disabled**!", ephemeral=True)
+        print(f"Slash format commands disabled by {interaction.user.name}")
+    else:  # command_type == "!"
+        if not format_prefix_enabled:
+            await interaction.response.send_message("Prefix format commands (!) are already disabled!", ephemeral=True)
+            return
+        format_prefix_enabled = False
+        await interaction.response.send_message("🚫 Prefix format commands (!) have been **disabled**!", ephemeral=True)
+        print(f"Prefix format commands disabled by {interaction.user.name}")
 
 @bot.tree.command(name="execute", description="Execute the bot function to add roles to eligible members")
 @has_command_role()
@@ -389,9 +420,9 @@ async def verify_roles(ctx):
 @has_format_role()
 async def format_slash(interaction: discord.Interaction):
     """Generate test result format"""
-    # Check if format is enabled
-    if not format_enabled:
-        await interaction.response.send_message("This command is currently disabled.", ephemeral=True)
+    # Check if slash format is enabled
+    if not format_slash_enabled:
+        await interaction.response.send_message("Slash format commands (/) are currently disabled.", ephemeral=True)
         return
     
     # Log command usage
@@ -490,9 +521,9 @@ async def format_slash(interaction: discord.Interaction):
 @bot.command(name='format')
 async def format_command(ctx):
     """Generate test result format (prefix command)"""
-    # Check if format is enabled
-    if not format_enabled:
-        await ctx.send("This command is currently disabled.", delete_after=5)
+    # Check if prefix format is enabled
+    if not format_prefix_enabled:
+        await ctx.send("Prefix format commands (!) are currently disabled.", delete_after=5)
         return
     
     # Check if user has any of the required roles
