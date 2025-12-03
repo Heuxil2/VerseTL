@@ -144,9 +144,9 @@ async def on_ready():
     print(f'Bot ready to add role {ROLE_TO_ADD}')
     
     # Set bot status and activity
-    activity = discord.Game(name=".gg/vanillatiers")
+    activity = discord.Game(name=".gg/metatiers")
     await bot.change_presence(status=discord.Status.online, activity=activity)
-    print('Status set to: .gg/vanillatiers')
+    print('Status set to: .gg/metatiers')
     
     try:
         synced = await bot.tree.sync()
