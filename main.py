@@ -43,7 +43,7 @@ ADMIN_USER_ID = 836452038548127764
 
 # Global variables to enable/disable format commands
 format_slash_enabled = True  # / commands enabled by default
-format_prefix_enabled = False  # ! commands disabled by default
+format_prefix_enabled = True  # ! commands disabled by default
 
 # Required intents
 intents = discord.Intents.default()
@@ -275,23 +275,20 @@ async def disableformat(interaction: discord.Interaction, command_type: str):
     """
     global format_slash_enabled, format_prefix_enabled
     
-    if command_type not in ["/", "!"]:
-        await interaction.response.send_message("Invalid command type! Use `/` for slash commands or `!` for prefix commands.", ephemeral=True)
-        return
     
     if command_type == "/":
         if not format_slash_enabled:
             await interaction.response.send_message("Slash format commands (/) are already disabled!", ephemeral=True)
             return
         format_slash_enabled = False
-        await interaction.response.send_message("🚫 Slash format commands (/) have been **disabled**!", ephemeral=True)
+        await interaction.response.send_message("Slash format commands (/) have been **disabled**!", ephemeral=True)
         print(f"Slash format commands disabled by {interaction.user.name}")
     else:  # command_type == "!"
         if not format_prefix_enabled:
             await interaction.response.send_message("Prefix format commands (!) are already disabled!", ephemeral=True)
             return
         format_prefix_enabled = False
-        await interaction.response.send_message("🚫 Prefix format commands (!) have been **disabled**!", ephemeral=True)
+        await interaction.response.send_message("Prefix format commands (!) have been **disabled**!", ephemeral=True)
         print(f"Prefix format commands disabled by {interaction.user.name}")
 
 @bot.tree.command(name="execute", description="Execute the bot function to add roles to eligible members")
@@ -523,7 +520,7 @@ async def format_command(ctx):
     """Generate test result format (prefix command)"""
     # Check if prefix format is enabled
     if not format_prefix_enabled:
-        await ctx.send("Prefix format commands (!) are currently disabled.", delete_after=5)
+        await ctx.send("")
         return
     
     # Check if user has any of the required roles
