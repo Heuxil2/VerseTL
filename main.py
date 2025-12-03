@@ -13,41 +13,35 @@ if not TOKEN:
 
 # IDs of required roles - UPDATED
 REQUIRED_ROLES = [
-    1440855338839576626,
-    1442166383977955471,
-    1412240815274590208,
-    1441253398170173601,
-    1407179621950296196,
-    1407096889954013305,
-    1419404798561882212,
-    1413275389589196862,
-    1413275300908896316
+    1442696049851502813,
+    1442696049893314581,
+    1442696049893314582
 ]
 
 # ID of the role to add
-ROLE_TO_ADD = 1419413367222960148
+ROLE_TO_ADD = 1442696049801035923
 
 # ID of the role that can use commands
-COMMAND_ROLE_ID = 1442166383977955471
+COMMAND_ROLE_ID = 1442696049893314582
 
 # IDs of roles that can use format command
 FORMAT_COMMAND_ROLES = [
-    1407179621950296196,
-    1407096889954013305,
-    1407196607505764364,
-    1407102663673253980
+    1442696049893314581,
+    1442696049893314582,
+    1442696049851502807,
+    1442696049851502808
 ]
 
 # Log channel ID
-LOG_CHANNEL_ID = 1407146849625837589
+LOG_CHANNEL_ID = 1442696052493914334
 
 # Voice channel ID for member count - REMPLACEZ None PAR L'ID DE VOTRE SALON VOCAL
-MEMBER_COUNT_CHANNEL_ID = None
+MEMBER_COUNT_CHANNEL_ID = 1445585263014318110
 
-# ID de l'utilisateur qui peut activer/désactiver le format
+# ID of the user who can enable/disable format commands
 ADMIN_USER_ID = 836452038548127764
 
-# Variable globale pour activer/désactiver le format
+# Global variable to enable/disable format commands
 format_enabled = True
 
 # Required intents
@@ -96,7 +90,7 @@ def has_format_role():
         return False
     return app_commands.check(predicate)
 
-# Custom check pour l'admin qui peut activer/désactiver le format
+# Custom check for the admin who can enable/disable format commands
 def is_format_admin():
     async def predicate(interaction: discord.Interaction) -> bool:
         return interaction.user.id == ADMIN_USER_ID
@@ -241,32 +235,32 @@ async def on_member_update(before, after):
                         print(f'Error removing role from {after.name}: {e}')
                 break
 
-@bot.tree.command(name="enableformat", description="Active les commandes format")
+@bot.tree.command(name="enableformat", description="Enable format commands")
 @is_format_admin()
 async def enableformat(interaction: discord.Interaction):
-    """Active les commandes format"""
+    """Enable format commands"""
     global format_enabled
     
     if format_enabled:
-        await interaction.response.send_message("Les commandes format sont déjà activées!", ephemeral=True)
+        await interaction.response.send_message("Format commands are already enabled!", ephemeral=True)
         return
     
     format_enabled = True
-    await interaction.response.send_message("✅ Les commandes format ont été **activées**!", ephemeral=True)
+    await interaction.response.send_message("✅ Format commands have been **enabled**!", ephemeral=True)
     print(f"Format commands enabled by {interaction.user.name}")
 
-@bot.tree.command(name="disableformat", description="Désactive les commandes format")
+@bot.tree.command(name="disableformat", description="Disable format commands")
 @is_format_admin()
 async def disableformat(interaction: discord.Interaction):
-    """Désactive les commandes format"""
+    """Disable format commands"""
     global format_enabled
     
     if not format_enabled:
-        await interaction.response.send_message("Les commandes format sont déjà désactivées!", ephemeral=True)
+        await interaction.response.send_message("Format commands are already disabled!", ephemeral=True)
         return
     
     format_enabled = False
-    await interaction.response.send_message("🚫 Les commandes format ont été **désactivées**!", ephemeral=True)
+    await interaction.response.send_message("🚫 Format commands have been **disabled**!", ephemeral=True)
     print(f"Format commands disabled by {interaction.user.name}")
 
 @bot.tree.command(name="execute", description="Execute the bot function to add roles to eligible members")
@@ -395,9 +389,9 @@ async def verify_roles(ctx):
 @has_format_role()
 async def format_slash(interaction: discord.Interaction):
     """Generate test result format"""
-    # Vérifier si le format est activé
+    # Check if format is enabled
     if not format_enabled:
-        await interaction.response.send_message("Cette commande est actuellement désactivée.", ephemeral=True)
+        await interaction.response.send_message("This command is currently disabled.", ephemeral=True)
         return
     
     # Log command usage
@@ -441,7 +435,7 @@ async def format_slash(interaction: discord.Interaction):
         return
     
     # Generate format based on tier
-    ping_role_id = 1419360899709272176
+    ping_role_id = 1442696049402712220
     
     if tier == 'ht3':
         message = f"@testee - ign - **Failed/Passed High Tier 3**\n*Passed Evaluation*\n\n"
@@ -496,9 +490,9 @@ async def format_slash(interaction: discord.Interaction):
 @bot.command(name='format')
 async def format_command(ctx):
     """Generate test result format (prefix command)"""
-    # Vérifier si le format est activé
+    # Check if format is enabled
     if not format_enabled:
-        await ctx.send("Cette commande est actuellement désactivée.", delete_after=5)
+        await ctx.send("This command is currently disabled.", delete_after=5)
         return
     
     # Check if user has any of the required roles
@@ -615,9 +609,9 @@ async def enableformat_error(interaction: discord.Interaction, error: app_comman
     if isinstance(error, app_commands.CheckFailure):
         try:
             if not interaction.response.is_done():
-                await interaction.response.send_message("Vous n'avez pas la permission d'utiliser cette commande!", ephemeral=True)
+                await interaction.response.send_message("You don't have permission to use this command!", ephemeral=True)
             else:
-                await interaction.followup.send("Vous n'avez pas la permission d'utiliser cette commande!", ephemeral=True)
+                await interaction.followup.send("You don't have permission to use this command!", ephemeral=True)
         except:
             print(f"Could not send error message for enableformat")
 
@@ -626,9 +620,9 @@ async def disableformat_error(interaction: discord.Interaction, error: app_comma
     if isinstance(error, app_commands.CheckFailure):
         try:
             if not interaction.response.is_done():
-                await interaction.response.send_message("Vous n'avez pas la permission d'utiliser cette commande!", ephemeral=True)
+                await interaction.response.send_message("You don't have permission to use this command!", ephemeral=True)
             else:
-                await interaction.followup.send("Vous n'avez pas la permission d'utiliser cette commande!", ephemeral=True)
+                await interaction.followup.send("You don't have permission to use this command!", ephemeral=True)
         except:
             print(f"Could not send error message for disableformat")
 
