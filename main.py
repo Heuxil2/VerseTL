@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 import asyncio
 import os
+from flask import Flask
+from threading import Thread
 
 # Configuration
 TOKEN = os.getenv('TOKEN')
@@ -15,6 +17,20 @@ intents.members = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='', intents=intents)
+
+# Serveur web pour Render
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot Discord actif!"
+
+def run():
+    app.run(host='0.0.0.0', port=10000)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
 winner_found = False
 
@@ -87,4 +103,8 @@ async def flip(ctx):
         await ctx.send('Erreur lors du retrait du rôle!')
         print(f'Erreur: {e}')
 
+# Démarrer le serveur web
+keep_alive()
+
+# Démarrer le bot
 bot.run(TOKEN)
