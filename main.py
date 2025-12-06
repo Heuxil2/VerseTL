@@ -62,4 +62,29 @@ async def flop(ctx):
         await ctx.send('Erreur lors de l\'attribution du rôle!')
         print(f'Erreur: {e}')
 
+@bot.command(name='flip')
+async def flip(ctx):
+    # Récupérer le rôle par son ID
+    guild = ctx.guild
+    role = guild.get_role(ROLE_ID)
+    
+    if not role:
+        await ctx.send('Erreur: Le rôle spécifié n\'existe pas!')
+        print(f'Rôle avec ID {ROLE_ID} introuvable')
+        return
+    
+    # Vérifier si l'utilisateur a le rôle
+    if role not in ctx.author.roles:
+        await ctx.send('Tu n\'as pas ce rôle!')
+        return
+    
+    # Enlever le rôle
+    try:
+        await ctx.author.remove_roles(role)
+        await ctx.send(f'Le rôle {role.name} t\'a été retiré!')
+        print(f'Rôle retiré à {ctx.author}')
+    except Exception as e:
+        await ctx.send('Erreur lors du retrait du rôle!')
+        print(f'Erreur: {e}')
+
 bot.run(TOKEN)
